@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    <h5 class="card-title">Импорт файлов и папок</h5>
+    <p class="text-muted">Поддерживаемые расширения: {{ allowed_exts }}</p>
+    <form method="post" enctype="multipart/form-data" id="import-form">
+      <div class="mb-3">
+        <label class="form-label">Выберите файлы</label>
+        <input class="form-control" type="file" name="files" multiple>
+        <div class="form-text">Можно выбрать несколько файлов.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Или выберите папку</label>
+        <input class="form-control" type="file" name="files" webkitdirectory directory>
+        <div class="form-text">Структура подпапок будет сохранена.</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Перетащите сюда файлы/папки</label>
+        <div id="dropzone" style="border:2px dashed rgba(0,0,0,0.2); border-radius:10px; padding:1rem; background:var(--card); text-align:center; color:var(--muted);">
+          Перетащите сюда файлы или папки для импорта
+        </div>
+        <div id="preview" class="mt-2" style="max-height: 260px; overflow:auto; display:none;">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong>К загрузке:</strong>
+            <button type="button" id="clear-list" class="btn btn-sm btn-outline-secondary">Очистить</button>
+          </div>
+          <ul id="file-list" style="list-style:none; padding:0; margin:0;"></ul>
+          <div id="summary" class="text-muted mt-1"></div>
+        </div>
+      </div>
+
+      <hr/>
+      <h6 class="card-subtitle mb-2">Параметры сканирования</h6>
+      <div class="row g-2 align-items-center">
+        <div class="col-auto form-check">
+          <input class="form-check-input" type="checkbox" id="start_scan" name="start_scan" checked>
+          <label class="form-check-label" for="start_scan">Сразу просканировать после загрузки</label>
+        </div>
+      </div>
+      <div class="row g-2 mt-1">
+        <div class="col-auto form-check">
+          <input class="form-check-input" type="checkbox" id="extract_text" name="extract_text" checked>
+          <label class="form-check-label" for="extract_text">Извлекать текст</label>
+        </div>
+        <div class="col-auto form-check">
+          <input class="form-check-input" type="checkbox" id="use_llm" name="use_llm">
+          <label class="form-check-label" for="use_llm">Использовать LLM</label>
+        </div>
+        <div class="col-auto form-check">
+          <input class="form-check-input" type="checkbox" id="prune" name="prune" checked>
+          <label class="form-check-label" for="prune">Удалять отсутствующие</label>
+        </div>
+      </div>
+
+      <div class="mt-3 d-flex align-items-center" style="gap:.5rem;">
+        <button type="submit" class="btn btn-primary" id="upload-btn">Загрузить</button>
+        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Отмена</a>
+        <div id="upload-progress" class="flex-fill d-none" style="height:10px; background: var(--muted-bg); border-radius:6px; overflow:hidden;">
+          <div id="upload-bar" style="height:100%; width:0%; background: var(--accent);"></div>
+        </div>
+        <div id="upload-label" class="text-muted d-none" style="min-width:90px; text-align:right;">0%</div>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', ()=>{
+  const form = document.getElementById('import-form');
+  const dz = document.getElementById('dropzone');
+  const listEl = document.getElementById('file-list');
+  const preview = document.getElementById('preview');
+  const summary = document.getElementById('summary');
+  const clearBtn = document.getElementById('clear-list');
+  const inputFiles = form.querySelector('input[type=file][multiple]');
+  const inputDir = form.querySelector('input[webkitdirectory]');
+  const startScanEl = document.getElementById('start_scan');
+  const extractEl = document.getElementById('extract_text');
+  const llmEl = document.getElementById('use_llm');
+  const pruneEl = document.getElementById('prune');
+
+  const entries = []; // {file:File, path:string}
+
+  function human(n){
+    const u=['Б','КБ','МБ','ГБ']; let i=0; let v=n; while(v>=1024 && i<u.length-1){ v/=1024; i++; } return (Math.round(v*10)/10)+' '+u[i];
+  }
+  function render(){
+    if (!entries.length){ preview.style.display='none'; return; }
+    preview.style.display='block';
+    listEl.innerHTML = entries.slice(0,1000).map(e=>`<li class="d-flex" style="gap:.5rem; align-items:center; padding:.15rem 0;">
+      <span class="text-muted" style="min-width:72px;">${human(e.file.size)}</span>
+      <span class="text-truncate" title="${e.path}">${e.path}</span>
+    </li>`).join('');
+    const total = entries.reduce((s,e)=>s+e.file.size,0);
+    summary.textContent = `Файлов: ${entries.length} • Объём: ${human(total)}`;
+  }
+  clearBtn.addEventListener('click', ()=>{ entries.splice(0, entries.length); render(); });
+
+  async function traverseEntry(entry, path){
+    return new Promise((resolve)=>{
+      if (entry.isFile){
+        entry.file((file)=>{ entries.push({file, path: (path? path + '/' : '') + file.name}); resolve(); });
+      } else if (entry.isDirectory){
+        const dirReader = entry.createReader();
+        dirReader.readEntries(async (ents)=>{
+          for (const en of ents){ await traverseEntry(en, (path? path + '/' : '') + entry.name); }
+          resolve();
+        });
+      } else { resolve(); }
+    });
+  }
+
+  async function handleDropItems(items){
+    const tasks = [];
+    for (const it of items){
+      const en = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null;
+      if (en){ tasks.push(traverseEntry(en, '')); }
+      else {
+        const f = it.getAsFile ? it.getAsFile() : null;
+        if (f) entries.push({file:f, path:f.name});
+      }
+    }
+    if (tasks.length) await Promise.all(tasks);
+    render();
+  }
+
+  dz.addEventListener('dragover', (e)=>{ e.preventDefault(); dz.style.background='var(--muted-bg)'; });
+  dz.addEventListener('dragleave', ()=>{ dz.style.background='var(--card)'; });
+  dz.addEventListener('drop', async (e)=>{
+    e.preventDefault(); dz.style.background='var(--card)';
+    const items = e.dataTransfer.items || [];
+    if (items && items.length){ await handleDropItems(items); }
+    else {
+      const files = e.dataTransfer.files || [];
+      for (const f of files){ entries.push({file:f, path:f.name}); }
+      render();
+    }
+  });
+
+  function addFromInput(fileList){
+    for (const f of fileList){
+      const rp = f.webkitRelativePath || f.relativePath || f.name;
+      entries.push({file:f, path: rp});
+    }
+    render();
+  }
+  inputFiles.addEventListener('change', ()=> addFromInput(inputFiles.files));
+  inputDir.addEventListener('change', ()=> addFromInput(inputDir.files));
+
+  // Intercept submit if we have entries — upload via fetch with our relative paths
+  function startUpload(fd){
+    const prog = document.getElementById('upload-progress');
+    const bar = document.getElementById('upload-bar');
+    const label = document.getElementById('upload-label');
+    prog.classList.remove('d-none');
+    label.classList.remove('d-none');
+    bar.style.width = '0%'; label.textContent = '0%';
+    // disable inputs during upload
+    form.querySelectorAll('input,button,select').forEach(el=> el.disabled = true);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '{{ url_for('import_files') }}');
+    xhr.upload.onprogress = (e)=>{
+      if (!e.lengthComputable) return;
+      const pct = Math.round((e.loaded / e.total) * 100);
+      bar.style.width = pct + '%';
+      label.textContent = pct + '%';
+    };
+    xhr.onload = ()=>{
+      if (xhr.status >= 200 && xhr.status < 400){
+        // if server redirected, responseURL will contain final url
+        if (xhr.responseURL) { window.location = xhr.responseURL; }
+        else { window.location = startScanEl.checked ? '{{ url_for('settings') }}' : '{{ url_for('index') }}'; }
+      } else {
+        alert('Ошибка импорта ('+xhr.status+')');
+        form.querySelectorAll('input,button,select').forEach(el=> el.disabled = false);
+      }
+    };
+    xhr.onerror = ()=>{
+      alert('Сбой сети при импорте');
+      form.querySelectorAll('input,button,select').forEach(el=> el.disabled = false);
+    };
+    xhr.send(fd);
+  }
+
+  form.addEventListener('submit', async (e)=>{
+    // если нет drag&drop записей, но пользователь выбрал через input — добавим их
+    if (!entries.length){
+      const toAdd = [];
+      for (const f of inputFiles.files){ toAdd.push({file:f, path: f.name}); }
+      for (const f of inputDir.files){ const rp = f.webkitRelativePath || f.name; toAdd.push({file:f, path: rp}); }
+      if (toAdd.length) { entries.push(...toAdd); }
+    }
+    if (!entries.length) return; // обычная отправка формы
+    e.preventDefault();
+    const fd = new FormData();
+    for (const {file, path} of entries){ fd.append('files', file, path); }
+    if (startScanEl.checked) fd.append('start_scan','on');
+    if (extractEl.checked) fd.append('extract_text','on');
+    if (llmEl.checked) fd.append('use_llm','on');
+    if (pruneEl.checked) fd.append('prune','on');
+    startUpload(fd);
+  });
+});
+</script>
+{% endblock %}

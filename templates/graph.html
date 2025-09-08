@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% block title %}Граф связей{% endblock %}
+{% block content %}
+<h2 class="mb-2">Граф связей: авторы, работы, организации</h2>
+<div class="d-flex align-items-center mb-2" style="gap:.5rem;">
+  <input id="graph-search" class="form-control" type="search" placeholder="Поиск узлов (частичное совпадение)…" style="max-width: 480px;">
+  <span class="text-muted" id="graph-result" style="min-width:120px;"></span>
+  <div class="ms-auto d-flex" style="gap:.5rem;">
+    <button id="graph-clear" class="btn btn-sm btn-outline-secondary" type="button">Очистить</button>
+  </div>
+</div>
+<div id="network" class="card" style="border:1px solid #ccc;"></div>
+<script src="{{ url_for('static', filename='vis-network-fallback.js') }}"></script>
+<script>
+// Универсальный загрузчик графа: пытается использовать vis-network если доступен,
+// иначе рендерит минимальную SVG-версию графа локально (офлайн).
+function renderFallbackGraph(container, data) {
+  container.innerHTML = '';
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('width', '100%');
+  const ch = Math.max(container.clientHeight || 0, 400);
+  svg.setAttribute('height', String(ch));
+  svg.style.background = 'transparent';
+  svg.style.cursor = 'grab';
+  container.appendChild(svg);
+
+  const nodes = (data.nodes || []).slice();
+  const edges = (data.edges || []).slice();
+
+  // layout: circular by default
+  const w = Math.max(container.clientWidth || 800, 400);
+  const h = ch;
+  const cx = w/2, cy = h/2, R = Math.min(w,h)/2 - 80;
+  const positions = {};
+  for (let i=0;i<nodes.length;i++){
+    const a = (i/nodes.length) * Math.PI*2 - Math.PI/2;
+    positions[nodes[i].id] = { x: cx + Math.cos(a)*R, y: cy + Math.sin(a)*R };
+  }
+
+  // viewport group for pan/zoom
+  const viewport = document.createElementNS(svgNS, 'g');
+  svg.appendChild(viewport);
+
+  // draw edges (lines) inside viewport
+  const edgeGroup = document.createElementNS(svgNS, 'g');
+  viewport.appendChild(edgeGroup);
+
+  // nodes group
+  const nodeGroup = document.createElementNS(svgNS, 'g');
+  viewport.appendChild(nodeGroup);
+
+  const cmap = { work: '#4e79a7', author: '#f28e2b', org: '#59a14f' };
+
+  const nodeEls = {};
+
+  nodes.forEach(node => {
+    const p = positions[node.id] || { x: cx, y: cy };
+    const g = document.createElementNS(svgNS, 'g');
+    g.setAttribute('transform', `translate(${p.x},${p.y})`);
+    g.setAttribute('data-id', String(node.id));
+    g.classList.add('graph-node');
+    const circle = document.createElementNS(svgNS, 'circle');
+    circle.setAttribute('r', 18);
+    circle.setAttribute('fill', cmap[node.type] || '#888');
+    circle.setAttribute('stroke', '#222'); circle.setAttribute('stroke-width', '0.6');
+    g.appendChild(circle);
+    const text = document.createElementNS(svgNS, 'text');
+    text.setAttribute('y', 4); text.setAttribute('x', 24); text.setAttribute('font-size', '12');
+    text.setAttribute('fill', '#111'); text.textContent = String(node.label).slice(0,40);
+    g.appendChild(text);
+    nodeGroup.appendChild(g);
+    nodeEls[node.id] = { el: g, data: node, pos: p };
+  });
+
+  edges.forEach((e, idx) => {
+    const from = positions[e.from];
+    const to = positions[e.to];
+    if (!from || !to) return;
+    const line = document.createElementNS(svgNS, 'line');
+    line.classList.add('edge-line');
+    line.setAttribute('data-from', String(e.from));
+    line.setAttribute('data-to', String(e.to));
+    line.setAttribute('data-idx', String(idx));
+    line.setAttribute('x1', from.x); line.setAttribute('y1', from.y);
+    line.setAttribute('x2', to.x); line.setAttribute('y2', to.y);
+    line.setAttribute('stroke', '#bbb'); line.setAttribute('stroke-width', '1.2');
+    edgeGroup.appendChild(line);
+  });
+
+  // transform state
+  let tx = 0, ty = 0, s = 1;
+  function applyTransform(){
+    viewport.setAttribute('transform', `translate(${tx},${ty}) scale(${s})`);
+  }
+  applyTransform();
+
+  // interaction: pan canvas
+  let isPanning = false, panStart = null, startTx = 0, startTy = 0;
+  svg.addEventListener('mousedown', (ev)=>{
+    if (ev.target === svg) {
+      isPanning = true; panStart = {x: ev.clientX, y: ev.clientY}; startTx = tx; startTy = ty; svg.style.cursor='grabbing';
+    }
+  });
+  window.addEventListener('mousemove', (ev)=>{
+    if (isPanning) {
+      const dx = ev.clientX - panStart.x; const dy = ev.clientY - panStart.y;
+      tx = startTx + dx; ty = startTy + dy; applyTransform();
+    }
+    if (dragState.dragging) {
+      const dsx = ev.clientX - dragState.startScreen.x;
+      const dsy = ev.clientY - dragState.startScreen.y;
+      const newWorldX = dragState.startWorld.x + dsx / s;
+      const newWorldY = dragState.startWorld.y + dsy / s;
+      dragState.pos.x = newWorldX; dragState.pos.y = newWorldY;
+      dragState.el.setAttribute('transform', `translate(${newWorldX},${newWorldY})`);
+      // update connected edges
+      updateEdges();
+    }
+  });
+  window.addEventListener('mouseup', ()=>{ isPanning=false; svg.style.cursor='grab'; dragState.dragging=false; });
+
+  // zoom with wheel
+  svg.addEventListener('wheel', (ev)=>{
+    ev.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const mx = ev.clientX - rect.left;
+    const my = ev.clientY - rect.top;
+    const worldX = (mx - tx) / s;
+    const worldY = (my - ty) / s;
+    const delta = -ev.deltaY > 0 ? 1.1 : 0.9;
+    s = Math.max(0.2, Math.min(5, s * delta));
+    // adjust tx/ty so that world point under mouse stays
+    tx = mx - worldX * s;
+    ty = my - worldY * s;
+    applyTransform();
+  }, { passive: false });
+
+  // dragging nodes
+  const dragState = { dragging:false, el:null, startScreen:null, startWorld:null, pos:null };
+  Object.keys(nodeEls).forEach(id => {
+    const obj = nodeEls[id];
+    const g = obj.el;
+    g.style.cursor = 'pointer';
+    g.addEventListener('mousedown', (ev)=>{
+      ev.stopPropagation();
+      dragState.dragging = true;
+      dragState.el = g;
+      dragState.startScreen = { x: ev.clientX, y: ev.clientY };
+      dragState.startWorld = { x: obj.pos.x, y: obj.pos.y };
+      dragState.pos = obj.pos;
+    });
+    g.addEventListener('dblclick', ()=>{
+      if (obj.data && String(obj.data.id).startsWith('file-')){
+        const fid = String(obj.data.id).split('-')[1];
+        window.location.href = '/file/' + fid;
+      }
+    });
+  });
+
+  function updateEdges(){
+    // recompute positions of lines
+    const lines = Array.from(edgeGroup.querySelectorAll('line'));
+    let idx = 0;
+    edges.forEach(e => {
+      const from = nodeEls[e.from] && nodeEls[e.from].pos;
+      const to = nodeEls[e.to] && nodeEls[e.to].pos;
+      if (!from || !to) return;
+      const line = lines[idx++];
+      if (line) {
+        line.setAttribute('x1', from.x);
+        line.setAttribute('y1', from.y);
+        line.setAttribute('x2', to.x);
+        line.setAttribute('y2', to.y);
+      }
+    });
+  }
+  // search (fallback): highlight matches, dim others
+  function applySearchFallback(term){
+    const q = (term||'').trim().toLowerCase();
+    let hits = 0;
+    const matched = new Set();
+    Object.keys(nodeEls).forEach(id=>{
+      const obj = nodeEls[id];
+      const label = String(obj.data.label||'').toLowerCase();
+      const match = q && label.includes(q);
+      const g = obj.el;
+      g.classList.toggle('match', !!match);
+      g.classList.toggle('dim', q && !match);
+      if (match) { hits++; matched.add(String(id)); }
+    });
+    // highlight/dim edges
+    const lines = edgeGroup.querySelectorAll('line.edge-line');
+    lines.forEach(line=>{
+      const onPath = q && (matched.has(line.getAttribute('data-from')) || matched.has(line.getAttribute('data-to')));
+      line.classList.toggle('edge-match', !!onPath);
+      line.classList.toggle('edge-dim', q && !onPath);
+    });
+    // center viewport on matches (simple centroid)
+    if (hits){
+      let sx=0, sy=0;
+      matched.forEach(id=>{ const p = nodeEls[id].pos; sx+=p.x; sy+=p.y; });
+      const cxSel = sx / matched.size; const cySel = sy / matched.size;
+      const rect = container.getBoundingClientRect();
+      const viewW = rect.width || 800; const viewH = rect.height || 600;
+      tx = viewW/2 - cxSel * s; ty = viewH/2 - cySel * s; applyTransform();
+    }
+    return hits;
+  }
+}
+
+const input = document.getElementById('graph-search');
+const clearBtn = document.getElementById('graph-clear');
+const resultEl = document.getElementById('graph-result');
+
+fetch('/api/graph').then(r => r.json()).then(data => {
+  if (window.vis && window.vis.Network) {
+    try {
+      const nodes = new vis.DataSet(data.nodes.map(n => ({ id: n.id, label: n.label, group: n.type })));
+      const edges = new vis.DataSet(data.edges.map((e, i) => ({ id:`e${i}`, from: e.from, to: e.to, label: e.label, arrows: 'to' })));
+      const container = document.getElementById('network');
+      const network = new vis.Network(container, { nodes, edges }, {
+        groups: {
+          work: { color: { background: '#4e79a7' }, shape: 'box' },
+          author: { color: { background: '#f28e2b' }, shape: 'ellipse' },
+          org: { color: { background: '#59a14f' }, shape: 'ellipse' }
+        },
+        physics: { stabilization: true },
+        layout: { improvedLayout: true },
+        edges: { font: { align: 'middle' } }
+      });
+      // search (vis-network): partial match + highlight
+      const orig = {}; const origEdge = {};
+      data.nodes.forEach(n=>{ orig[n.id] = nodes.get(n.id).color || { background: undefined, border: undefined }; });
+      edges.forEach(function(ed){ origEdge[ed.id] = ed.color || { color: undefined }; });
+      function applySearchVis(term){
+        const q = (term||'').trim().toLowerCase();
+        let hits = []; const hitSet = new Set();
+        nodes.forEach(function(n){
+          const label = String(n.label||'');
+          const match = q && label.toLowerCase().includes(q);
+          const base = orig[n.id] || {};
+          if (match){
+            nodes.update({ id:n.id, color: { background: base.background || '#ffd7d7', border: '#dc2626' }, borderWidth: 3 });
+            hits.push(n.id); hitSet.add(n.id);
+          } else if (q) {
+            nodes.update({ id:n.id, color: { background: '#eeeeee', border: '#cccccc' }, borderWidth: 1 });
+          } else {
+            nodes.update({ id:n.id, color: base, borderWidth: 1 });
+          }
+        });
+        // edges highlight
+        edges.forEach(function(ed){
+          const onPath = q && (hitSet.has(ed.from) || hitSet.has(ed.to));
+          const base = origEdge[ed.id] || {};
+          if (onPath){ edges.update({ id:ed.id, color: { color: '#dc2626' }, width: 2 }); }
+          else if (q){ edges.update({ id:ed.id, color: { color: '#cccccc' }, width: 1 }); }
+          else { edges.update({ id:ed.id, color: base, width: 1 }); }
+        });
+        if (hits.length){
+          // Focus logic: single node -> focus, multiple -> fit to set
+          if (hits.length === 1){
+            // small async to ensure dataset updates are painted before focusing
+            requestAnimationFrame(()=>{
+              try { network.focus(hits[0], { scale: 1.4, animation: { duration: 450, easing: 'easeInOutQuad' } }); } catch(e){}
+            });
+          } else {
+            requestAnimationFrame(()=>{
+              try { network.fit({ nodes: hits, animation: { duration: 450, easing: 'easeInOutQuad' } }); } catch(e){}
+            });
+          }
+        }
+        return hits.length;
+      }
+      function onInput(){ const n = applySearchVis(input.value); resultEl.textContent = n? `Найдено: ${n}` : ''; }
+      input.addEventListener('input', onInput);
+      clearBtn.addEventListener('click', ()=>{ input.value=''; onInput(); });
+      return; // finish vis-network path
+    } catch (e) {
+      console.warn('vis failed, falling back to SVG renderer', e);
+    }
+  }
+  const container = document.getElementById('network');
+  function draw(){ renderFallbackGraph(container, data); }
+  draw();
+  // connect search for fallback by toggling classes
+  function onInputFallback(){
+    const q = (input.value||'').trim().toLowerCase();
+    let n = 0;
+    if (!container.querySelector('svg')) { draw(); }
+    // find function attached in closure scope not accessible; re-highlight by scanning DOM
+    const nodes = container.querySelectorAll('.graph-node');
+    nodes.forEach(g=>{
+      const label = g.querySelector('text')?.textContent?.toLowerCase() || '';
+      const match = q && label.includes(q);
+      g.classList.toggle('match', !!match);
+      g.classList.toggle('dim', q && !match);
+      if (match) n++;
+    });
+    resultEl.textContent = n? `Найдено: ${n}` : '';
+  }
+  input.addEventListener('input', onInputFallback);
+  clearBtn.addEventListener('click', ()=>{ input.value=''; onInputFallback(); });
+}).catch(e => {
+  console.error('Failed to load /api/graph', e);
+  document.getElementById('network').innerText = 'Не удалось загрузить граф: ошибка сервера.';
+});
+</script>
+{% endblock %}

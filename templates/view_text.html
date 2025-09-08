@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Просмотр файла: {{ filename }}</h2>
+<pre style="white-space: pre-wrap; word-break: break-all; background: #f8f9fa; padding: 1em; border-radius: 4px;">
+{{ content|e }}
+</pre>
+<a href="{{ url_for('download_file', rel_path=filename) }}" class="btn btn-secondary">Скачать</a>
+{% endblock %}

@@ -1,0 +1,482 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" class="card">
+  <div class="card-body">
+    <h5 class="card-title">Настройки</h5>
+    <div class="mb-3">
+      <label class="form-label">Корневая папка для сканирования</label>
+      <input class="form-control" name="scan_root" value="{{ scan_root }}">
+      <div class="form-text">Пример: C:\Data\Library</div>
+    </div>
+    <div class="form-check form-switch mb-3">
+      <input class="form-check-input" type="checkbox" id="ex" name="extract_text" {% if extract_text %}checked{% endif %}>
+      <label class="form-check-label" for="ex">Извлекать текст из PDF</label>
+    </div>
+    <h6 class="mt-3">Аудио (оффлайн транскрибация)</h6>
+    <div class="row g-3 mb-2">
+      <div class="col-md-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="tr_en" name="transcribe_enabled" {% if transcribe_enabled %}checked{% endif %}>
+          <label class="form-check-label" for="tr_en">Включить транскрибацию аудио</label>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Бэкенд</label>
+        <select class="form-select" name="transcribe_backend" disabled>
+          <option value="faster-whisper" selected>faster-whisper</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Язык</label>
+        <input class="form-control" name="transcribe_language" value="{{ transcribe_language }}">
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Путь к модели</label>
+      <input class="form-control" name="transcribe_model" value="{{ transcribe_model }}">
+      <div class="form-text">
+        Укажите каталог модели CTranslate2 ИЛИ короткое имя (small, medium, large-v3). При имени модель будет автоматически загружена в кэш.
+      </div>
+    </div>
+    <div class="form-check form-switch mb-3">
+      <input class="form-check-input" type="checkbox" id="summ_audio" name="summarize_audio" {% if summarize_audio %}checked{% endif %}>
+      <label class="form-check-label" for="summ_audio">Краткое резюме аудио (через LLM)</label>
+    </div>
+    <div class="form-check form-switch mb-3">
+      <input class="form-check-input" type="checkbox" id="kws_audio" name="audio_keywords_llm" {% if audio_keywords_llm %}checked{% endif %}>
+      <label class="form-check-label" for="kws_audio">Ключевые слова из стенограммы (LLM)</label>
+    </div>
+    <div class="row g-3 mb-2">
+      <div class="col-md-6">
+        <label class="form-label">OCR языки</label>
+        <input class="form-control" name="ocr_langs" value="{{ ocr_langs }}">
+        <div class="form-text">Например: rus+eng</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">OCR страниц (первые N)</label>
+        <input class="form-control" name="pdf_ocr_pages" type="number" min="0" max="10" value="{{ pdf_ocr_pages }}">
+      </div>
+    </div>
+    <div class="row g-3 mb-2">
+      <div class="col-md-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="def_llm" name="default_use_llm" {% if default_use_llm %}checked{% endif %}>
+          <label class="form-check-label" for="def_llm">LLM по умолчанию</label>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="def_prune" name="default_prune" {% if default_prune %}checked{% endif %}>
+          <label class="form-check-label" for="def_prune">Prune по умолчанию</label>
+        </div>
+      </div>
+    </div>
+    <div class="form-check form-switch mb-3">
+      <input class="form-check-input" type="checkbox" id="theme_switch">
+      <label class="form-check-label" for="theme_switch">Тёмная тема (интерфейс)</label>
+    </div>
+    <h6 class="mt-4">LM Studio (опционально)</h6>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">API Base</label>
+        <input class="form-control" name="lm_base" value="{{ lm_base }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Модель</label>
+        <input class="form-control" name="lm_model" value="{{ lm_model }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">API Key</label>
+        <input class="form-control" name="lm_key" value="{{ lm_key }}">
+      </div>
+    </div>
+  </div>
+  <div class="card-footer">
+    <button class="btn btn-primary">Сохранить</button>
+  </div>
+</form>
+
+<div class="card mt-3">
+  <div class="card-body">
+    <h6 class="card-title">Сканирование библиотеки</h6>
+    <form id="scan-form-settings">
+      <div class="row g-2">
+        <div class="col-auto form-check">
+          <input class="form-check-input" type="checkbox" id="extract2" name="extract_text" {% if extract_text %}checked{% endif %}>
+          <label class="form-check-label" for="extract2">Извлекать текст</label>
+        </div>
+        <div class="col-auto form-check">
+          <input class="form-check-input" type="checkbox" id="use_llm2" name="use_llm" {% if default_use_llm %}checked{% endif %}>
+          <label class="form-check-label" for="use_llm2">Использовать LLM</label>
+        </div>
+        <div class="col-auto form-check">
+          <input class="form-check-input" type="checkbox" id="prune2" name="prune" {% if default_prune %}checked{% endif %}>
+          <label class="form-check-label" for="prune2">Удалять отсутствующие</label>
+        </div>
+        <div class="col-auto ms-auto">
+          <button class="btn btn-outline-secondary" id="scan-start-btn" type="button">Сканировать папку</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-body">
+    <h6 class="card-title">База данных</h6>
+    <div class="d-flex" style="gap:.5rem;">
+      <form method="post" action="{{ url_for('backup_db') }}">
+        <button class="btn btn-outline-primary" type="submit">Резервная копия</button>
+      </form>
+      <form method="post" action="{{ url_for('clear_db') }}" onsubmit="return confirm('Удалить ВСЕ записи? Операция необратима.');">
+        <button class="btn btn-outline-danger" type="submit">Очистить базу</button>
+      </form>
+    </div>
+    <hr/>
+    <h6 class="card-subtitle mb-2">Импорт базы (SQLite .db)</h6>
+    <form method="post" action="{{ url_for('import_db') }}" enctype="multipart/form-data" onsubmit="return confirm('Импорт заменит текущую базу. Будет создана резервная копия. Продолжить?');">
+      <div class="row g-2 align-items-center">
+        <div class="col-auto">
+          <input class="form-control" type="file" name="dbfile" accept=".db" required>
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary" type="submit">Импортировать</button>
+        </div>
+      </div>
+      <div class="form-text">Текущая база будет автоматически сохранена в папке backups.</div>
+    </form>
+  </div>
+</div>
+
+<!-- Модальное окно прогресса сканирования (то же, что и на главной) -->
+<div id="scan-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.35); display:none; align-items:center; justify-content:center; z-index:2000;">
+  <div class="card" style="width: 520px; max-width: 92%;">
+    <div class="card-body">
+      <h6 class="card-title mb-2">Сканирование библиотеки</h6>
+      <div class="tabs d-flex mb-2" style="gap:.5rem;">
+        <button class="btn btn-outline-secondary btn-sm tab active" data-tab="status">Статус</button>
+        <button class="btn btn-outline-secondary btn-sm tab" data-tab="log">Лог</button>
+      </div>
+      <div id="scan-pane-status">
+        <div class="mb-2 text-muted" id="scan-stage">Готово к запуску…</div>
+        <div class="progress" style="height:10px; background: var(--muted-bg); border-radius:6px; overflow:hidden;">
+          <div id="scan-bar" style="height:100%; width:0%; background: var(--accent);"></div>
+        </div>
+        <div class="d-flex mt-2" style="gap:.5rem; align-items:center;">
+          <div id="scan-stats" class="text-muted">0 / 0</div>
+          <div id="scan-eta" class="text-muted ms-2"></div>
+          <div class="ms-auto">
+            <button class="btn btn-outline-secondary btn-sm" id="scan-cancel-btn" type="button">Отменить</button>
+            <button class="btn btn-primary btn-sm d-none" id="scan-close-btn" type="button">Закрыть</button>
+          </div>
+        </div>
+      </div>
+      <div id="scan-pane-log" class="d-none">
+        <div id="scan-log" style="max-height: 240px; overflow:auto; background: var(--muted-bg); padding:.5rem; border-radius:6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;"></div>
+      </div>
+    </div>
+  </div>
+  <style>
+    .progress { box-shadow: 0 0 0 1px rgba(0,0,0,0.06) inset; }
+  </style>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  const form = document.getElementById('scan-form-settings');
+  const startBtn = document.getElementById('scan-start-btn');
+  const modal = document.getElementById('scan-modal');
+  const bar = document.getElementById('scan-bar');
+  const stats = document.getElementById('scan-stats');
+  const eta = document.getElementById('scan-eta');
+  const stage = document.getElementById('scan-stage');
+  const cancelBtn = document.getElementById('scan-cancel-btn');
+  const closeBtn = document.getElementById('scan-close-btn');
+  const tabs = document.querySelectorAll('#scan-modal .tab');
+  const paneStatus = document.getElementById('scan-pane-status');
+  const paneLog = document.getElementById('scan-pane-log');
+  const logView = document.getElementById('scan-log');
+  let pollTimer = null;
+  let lastStatus = null;
+
+  function showModal() { modal.style.display = 'flex'; }
+  function hideModal() { modal.style.display = 'none'; }
+  function setBar(p){ bar.style.width = Math.max(0, Math.min(100, p)) + '%'; }
+
+  async function pollStatusOnce(){
+    const r = await fetch('{{ url_for('scan_status') }}');
+    const s = await r.json();
+    lastStatus = s;
+    const total = s.total || 0; const done = s.processed || 0;
+    const pct = total ? Math.round(done/total*100) : (s.running ? 5 : 0);
+    setBar(pct);
+    stats.textContent = `${done} / ${total} — добавлено ${s.added||0}, обновлено ${s.updated||0}, удалено ${s.removed||0}`;
+    if (s.eta_seconds) {
+      const m = Math.floor(s.eta_seconds/60), sec = s.eta_seconds%60;
+      eta.textContent = `≈ осталось ${m}м ${sec}с`;
+    } else { eta.textContent = ''; }
+    let stLabel = s.stage;
+    if (s.stage === 'counting') stLabel = 'Подготовка…';
+    else if (s.stage === 'processing') stLabel = `Обработка: ${s.current||''}`;
+    else if (s.stage === 'llm') stLabel = 'Извлечение метаданных (LLM)…';
+    else if (s.stage === 'prune') stLabel = 'Удаление отсутствующих…';
+    else if (s.stage === 'done') stLabel = 'Готово';
+    else if (s.stage === 'error') stLabel = 'Ошибка';
+    stage.textContent = stLabel;
+    if (s.error) stage.textContent += `: ${s.error}`;
+    if (s.history && Array.isArray(s.history)){
+      logView.innerHTML = s.history.map(h=>{
+        const d = new Date(h.t*1000); const ts = d.toLocaleTimeString();
+        const lvl = (h.level||'info').toUpperCase();
+        return `<div><span class="text-muted">[${ts}]</span> <b>${lvl}</b> ${h.msg}</div>`;
+      }).join('');
+      logView.scrollTop = logView.scrollHeight;
+    }
+    if (!s.running && (s.stage === 'done' || s.stage === 'error')){
+      clearInterval(pollTimer); pollTimer = null;
+      cancelBtn.classList.add('d-none');
+      // оставляем closeBtn видимой всегда
+    } else {
+      cancelBtn.classList.remove('d-none');
+    }
+  }
+
+  function startPolling(){
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollStatusOnce, 600);
+    pollStatusOnce();
+  }
+
+  startBtn?.addEventListener('click', async ()=>{
+    const fd = new FormData(form);
+    // Если есть незавершённый прогресс — предложить продолжить
+    try{
+      const raw = localStorage.getItem('scan_resume');
+      if (raw){
+        const st = JSON.parse(raw);
+        if (st && st.processed > 0){
+          const cont = confirm(`Продолжить с ${st.processed}/${st.total}? Нажмите Отмена для начала заново.`);
+          if (cont){ fd.append('skip', String(st.processed)); }
+          localStorage.removeItem('scan_resume');
+        }
+      }
+    }catch(e){}
+    try{
+      const r = await fetch('{{ url_for('scan_start') }}', { method: 'POST', body: fd });
+      if (r.ok) { showModal(); cancelBtn.classList.remove('d-none'); closeBtn.classList.add('d-none'); setBar(0); startPolling(); }
+      else if (r.status === 409) { showModal(); stage.textContent = 'Сканирование уже выполняется…'; startPolling(); }
+      else { alert('Не удалось запустить сканирование'); }
+    } catch(e){ alert('Ошибка запуска: ' + e); }
+  });
+
+  cancelBtn?.addEventListener('click', async ()=>{
+    cancelBtn.disabled = true;
+    await fetch('{{ url_for('scan_cancel') }}', { method: 'POST' });
+  });
+
+  closeBtn?.addEventListener('click', async ()=>{
+    try{
+      if (lastStatus && lastStatus.running){
+        const resume = { processed: lastStatus.processed||0, total: lastStatus.total||0, ts: Date.now() };
+        try{ localStorage.setItem('scan_resume', JSON.stringify(resume)); }catch(e){}
+        await fetch('{{ url_for('scan_cancel') }}', { method: 'POST' });
+      }
+    }catch(e){}
+    hideModal();
+  });
+
+  // Табы в модалке
+  tabs.forEach(b=>{
+    b.addEventListener('click', ()=>{
+      tabs.forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      const tab = b.dataset.tab;
+      paneStatus.classList.toggle('d-none', tab !== 'status');
+      paneLog.classList.toggle('d-none', tab !== 'log');
+      try { localStorage.setItem('scan_modal_tab', tab); } catch(e){}
+    });
+  });
+
+  // Автоподхват состояния при перезагрузке
+  (async ()=>{
+    try{
+      const r = await fetch('{{ url_for('scan_status') }}');
+      if (!r.ok) return;
+      const s = await r.json();
+      const savedTab = (localStorage.getItem('scan_modal_tab') || 'status');
+      tabs.forEach(x=>x.classList.toggle('active', x.dataset.tab === savedTab));
+      paneStatus.classList.toggle('d-none', savedTab !== 'status');
+      paneLog.classList.toggle('d-none', savedTab !== 'log');
+      if (s.running || ['counting','processing','llm','prune'].includes(s.stage)){
+        showModal(); cancelBtn.classList.remove('d-none'); closeBtn.classList.add('d-none'); startPolling();
+      }
+    }catch(e){ /* ignore */ }
+  })();
+});
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', ()=>{
+  const sw = document.getElementById('theme_switch');
+  function apply(t){
+    document.documentElement.setAttribute('data-theme', t);
+    localStorage.setItem('theme', t);
+    if (sw) sw.checked = (t === 'dark');
+  }
+  // initialize from localStorage
+  const saved = localStorage.getItem('theme') || 'light';
+  apply(saved);
+  if (sw) sw.addEventListener('change', ()=>{ apply(sw.checked ? 'dark' : 'light'); });
+});
+</script>
+
+<!-- Диагностика: проверка транскрибации одного файла -->
+<div class="card mt-3">
+  <div class="card-body">
+    <h6 class="card-title">Диагностика транскрибации</h6>
+    <div class="row g-2 align-items-end">
+      <div class="col-md-5">
+        <label class="form-label">Путь к файлу (относительно SCAN_ROOT или абсолютный)</label>
+        <input class="form-control" id="diag-path" placeholder="например: Audio_23857.wav">
+      </div>
+      <div class="col-md-2 text-center">или</div>
+      <div class="col-md-2">
+        <label class="form-label">ID файла</label>
+        <input class="form-control" id="diag-id" placeholder="например: 123">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Лимит символов</label>
+        <input class="form-control" id="diag-limit" type="number" min="200" max="20000" value="1000">
+      </div>
+      </div>
+      <div class="row g-2 align-items-end mt-2">
+        <!-- Выбор backend убран: поддерживается только faster-whisper -->
+        <div class="col-md-3">
+          <label class="form-label">Язык</label>
+          <input class="form-control" id="diag-lang" placeholder="например: ru" value="{{ transcribe_language }}">
+        </div>
+        <div class="col-md-3 form-check" style="padding-top: 2rem;">
+          <input class="form-check-input" type="checkbox" id="diag-vad">
+          <label class="form-check-label" for="diag-vad">Отключить VAD (FW)</label>
+        </div>
+        <div class="col-md-3 d-grid">
+          <button class="btn btn-outline-secondary" id="diag-run" type="button">Проверить</button>
+        </div>
+      </div>
+    <div class="row g-2 align-items-end mt-2">
+      <div class="col-md-5">
+        <label class="form-label">Модель (для faster-whisper)</label>
+        <input class="form-control" id="diag-model" placeholder="например: small, medium, large-v3" value="{{ transcribe_model }}">
+        <div class="form-text">Можно указать путь или короткое имя. Для автозагрузки требуется пакет huggingface_hub.</div>
+      </div>
+      <div class="col-md-3 form-check" style="padding-top: 2rem;">
+        <input class="form-check-input" type="checkbox" id="diag-download">
+        <label class="form-check-label" for="diag-download">Скачать модель (если нет)</label>
+      </div>
+      <div class="col-md-2 d-grid">
+        <button class="btn btn-outline-primary" id="diag-model-run" type="button">Проверить модель</button>
+      </div>
+    </div>
+    <div id="diag-result" class="mt-3" style="display:none;">
+      <div class="mb-2"><strong>Статус окружения</strong></div>
+      <div id="diag-env" class="text-muted"></div>
+      <hr/>
+      <div class="mb-2"><strong>Файл</strong></div>
+      <div id="diag-file" class="text-muted"></div>
+      <hr/>
+      <div class="mb-2"><strong>Транскрипт</strong></div>
+      <pre id="diag-transcript" class="preview-text" style="max-height: 220px;"></pre>
+      <div id="diag-warn" class="mt-2 text-muted"></div>
+      </div>
+  </div>
+  <script>
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const btn = document.getElementById('diag-run');
+    const btnModel = document.getElementById('diag-model-run');
+    const ipPath = document.getElementById('diag-path');
+    const ipId = document.getElementById('diag-id');
+    const ipLimit = document.getElementById('diag-limit');
+    const ipModel = document.getElementById('diag-model');
+    const cbDownload = document.getElementById('diag-download');
+    const box = document.getElementById('diag-result');
+    const envEl = document.getElementById('diag-env');
+    const fileEl = document.getElementById('diag-file');
+    const trEl = document.getElementById('diag-transcript');
+    const warnEl = document.getElementById('diag-warn');
+    const ipBackend = null;
+    const ipLang = document.getElementById('diag-lang');
+    const cbVad = document.getElementById('diag-vad');
+
+    function fmtBytes(n){
+      if (!n || isNaN(n)) return '-';
+      const u=['Б','КБ','МБ','ГБ']; let i=0; let x=Number(n);
+      while(x>=1024 && i<u.length-1){ x/=1024; i++; }
+      return x.toFixed(1)+' '+u[i];
+    }
+
+    async function runDiag(opts){
+      const { path, id, limit, model, download, backend, lang, vad } = opts;
+      const qs = new URLSearchParams();
+      if (path) qs.set('path', path);
+      if (id) qs.set('file_id', id);
+      if (limit) qs.set('limit', String(limit));
+      if (model) qs.set('model', model);
+      if (download) qs.set('download', '1');
+      if (backend) qs.set('backend', backend);
+      if (lang) qs.set('lang', lang);
+      if (vad !== undefined && vad !== null) qs.set('vad', vad ? '1' : '0');
+      const r = await fetch(`/diagnostics/transcribe?${qs.toString()}`);
+      const j = await r.json();
+      box.style.display = '';
+      envEl.innerHTML = `Вкл: <b>${j.transcribe_enabled}</b>; Бэкенд: <b>${j.backend||'-'}</b>; Язык: <b>${j.language||'-'}</b><br>
+        Модель: <code>${j.model_path||'-'}</code> (существует: <b>${j.model_exists}</b>)<br>
+        ffmpeg: <b>${j.ffmpeg}</b>; ffprobe: <b>${j.ffprobe}</b>`;
+      const f = j.file||{};
+      fileEl.innerHTML = `Путь: <code>${f.path||'-'}</code><br>
+        Есть: <b>${f.exists}</b>; Тип: <b>${f.ext||'-'}</b>; Размер: <b>${fmtBytes(f.size)}</b><br>
+        Длительность: <b>${(f.duration_str||'')||'-'}</b> (${(f.duration_seconds||'')||'-'} сек)`;
+      const t = j.transcript||{};
+      trEl.textContent = t.sample || '';
+      const ap = j.applied||{};
+      if (ap.backend || ap.lang || (ap.vad!==undefined)){
+        envEl.innerHTML += `<br>Параметры диагностики: backend=<b>${ap.backend||'(настройки)'}</b>, lang=<b>${ap.lang||'(настройки)'}</b>, VAD=<b>${(ap.vad===true?'on':(ap.vad===false?'off':'auto'))}</b>`;
+      }
+      const fw = j.faster_whisper||{};
+      if (fw && (fw.model_ref||fw.repo)){
+        const info = `FW: модель=<code>${fw.model_ref||'-'}</code> repo=<code>${fw.repo||'-'}</code><br>
+        кэш: <code>${fw.cache_dir||'-'}</code><br>
+        целевая папка: <code>${fw.target_dir||'-'}</code> (есть: <b>${fw.target_exists}</b>)`;
+        envEl.innerHTML += '<br>'+info;
+      }
+      warnEl.textContent = (j.warnings&&j.warnings.length) ? ('Предупреждения: '+ j.warnings.join(', ')) : '';
+      return j;
+    }
+
+    btn?.addEventListener('click', async ()=>{
+      const path = (ipPath.value||'').trim();
+      const id = (ipId.value||'').trim();
+      const limit = Math.max(200, Math.min(20000, parseInt(ipLimit.value||'1000',10)||1000));
+      if (!path && !id){ alert('Укажите путь или ID файла'); return; }
+      const prev = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Проверка…';
+      try{
+        const backend = '';
+        const lang = (ipLang.value||'').trim();
+        const vad = cbVad.checked ? false : undefined; // checked = disable VAD
+        await runDiag({ path, id, limit, backend, lang, vad });
+      }catch(e){ alert('Ошибка диагностики: '+e); }
+      finally{ btn.textContent = prev; btn.disabled = false; }
+    });
+
+    btnModel?.addEventListener('click', async ()=>{
+      const model = (ipModel.value||'').trim();
+      const download = cbDownload.checked;
+      if (!model){ alert('Укажите модель'); return; }
+      const prev = btnModel.textContent; btnModel.disabled = true; btnModel.textContent = '⏳ Проверка…';
+      try{
+        await runDiag({ model, download });
+      }catch(e){ alert('Ошибка диагностики модели: '+e); }
+      finally{ btnModel.textContent = prev; btnModel.disabled = false; }
+    });
+  });
+  </script>
+</div>
+{% endblock %}

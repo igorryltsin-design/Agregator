@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    <h4 class="card-title">{{ f.title or f.filename }}</h4>
+    <div class="mb-2 text-muted">
+      {% set mt_norm = (f.material_type or 'document')|lower %}
+      {% set type_ru_map = {
+        'dissertation':'Диссертация', 'dissertation_abstract':'Автореферат',
+        'article':'Статья', 'textbook':'Учебник', 'monograph':'Монография',
+        'report':'Отчёт', 'patent':'Патент', 'presentation':'Презентация',
+        'proceedings':'Материалы конференции', 'standard':'Стандарт',
+        'note':'Заметки', 'document':'Документ', 'audio':'Аудио'
+      } %}
+      {{ type_ru_map.get(mt_norm, f.material_type or 'Документ') }}{% if f.author %} • {{ f.author }}{% endif %}{% if f.year %} • {{ f.year }}{% endif %}
+    </div>
+    <div class="mb-2">
+      <code>{{ f.path }}</code>
+    </div>
+    {% if f.keywords %}
+      <div class="mb-2"><strong>Ключевые слова:</strong> {{ f.keywords }}</div>
+    {% endif %}
+    {% if f.advisor %}
+      <div class="mb-2"><strong>Научный руководитель:</strong> {{ f.advisor }}</div>
+    {% endif %}
+    <div class="mb-3">
+      <strong>Теги:</strong>
+      <ul class="mb-0">
+        {% set key_ru_map = {
+          'type':'Тип','тип':'Тип','author':'Автор','автор':'Автор','year':'Год','год':'Год',
+          'advisor':'Научный руководитель','doi':'DOI','isbn':'ISBN','literature':'Литература',
+          'organizations':'Организации','classification':'Классификация','журнал':'Журнал',
+          'номер':'Номер','страницы':'Страницы','дисциплина':'Дисциплина','издательство':'Издательство',
+          'специальность':'Специальность','организация':'Организация','кафедра':'Кафедра','степень':'Степень'
+        } %}
+        {% for t in f.tags %}
+          {% set key_norm = (t.key or '')|lower %}
+          <li><span class="badge text-bg-secondary">{{ key_ru_map.get(key_norm, t.key) }}</span> {{ t.value }}</li>
+        {% else %}
+          <li class="text-muted">нет тегов</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% if (f.material_type or '')|lower == 'audio' %}
+      <div class="mb-3">
+        <audio controls preload="metadata" style="width:100%;">
+          <source src="{{ url_for('media_file', rel_path=f.rel_path) }}">
+        </audio>
+      </div>
+    {% endif %}
+    {% if f.abstract %}
+      <details>
+        <summary>Резюме</summary>
+        <pre class="mt-2 small">{{ f.abstract }}</pre>
+      </details>
+    {% endif %}
+    {% if f.text_excerpt %}
+      <details>
+        <summary>Фрагмент текста</summary>
+        <pre class="mt-2 small">{{ f.text_excerpt }}</pre>
+      </details>
+    {% endif %}
+  <a class="btn btn-primary mt-3" href="{{ url_for('edit', file_id=f.id) }}">Редактировать</a>
+  <a class="btn btn-outline-secondary mt-3 ms-2" href="{{ url_for('preview_file', rel_path=f.rel_path) }}">Предпросмотр</a>
+  </div>
+</div>
+{% endblock %}

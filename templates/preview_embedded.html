@@ -1,0 +1,44 @@
+<!-- Минимальный предпросмотр для режима iframe (embedded=1) -->
+<div class="preview-embedded">
+  <div style="padding: .6rem .8rem; border-bottom:1px solid rgba(0,0,0,0.06); background:var(--card);">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:.5rem;">
+      <div style="font-weight:600;">Предпросмотр: {{ filename }}</div>
+      <div>
+        {% if file_id %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('file_detail', file_id=file_id) }}" target="_parent" rel="noopener">Открыть карточку</a>
+        {% endif %}
+        <a class="btn btn-sm btn-secondary" href="{{ url_for('download_file', rel_path=filename) }}">Скачать</a>
+      </div>
+    </div>
+  </div>
+  <div style="padding: .8rem; background:var(--card);">
+    {% if is_pdf %}
+      <embed src="{{ url_for('view_file', rel_path=filename) }}" type="application/pdf" width="100%" height="100%" style="min-height:50vh;">
+    {% elif is_audio %}
+      {% if audio_url %}
+        <div class="mb-2 d-flex align-items-center" style="gap:.5rem;">
+          <audio controls preload="metadata" style="width:100%;">
+            <source src="{{ audio_url }}">
+          </audio>
+          {% if duration %}<span class="badge text-bg-secondary">{{ duration }}</span>{% endif %}
+        </div>
+      {% endif %}
+      {% if abstract %}
+        <div class="mb-2"><strong>Резюме:</strong></div>
+        <pre class="preview-text">{{ abstract }}</pre>
+      {% elif content %}
+        <div class="mb-2 text-muted">Фрагмент стенограммы:</div>
+        <pre class="preview-text">{{ content }}</pre>
+      {% else %}
+        <div class="text-muted">Предпросмотр недоступен.</div>
+      {% endif %}
+    {% elif is_text %}
+      <pre class="preview-text">{{ content }}</pre>
+    {% elif thumbnail_url %}
+      <img src="{{ thumbnail_url }}" alt="thumbnail" class="img-fluid" style="max-width:100%;">
+    {% else %}
+      <p>Предпросмотр для этого типа файла не поддерживается. Показан фрагмент текста (если доступен):</p>
+      <pre class="preview-text">{{ content }}</pre>
+    {% endif %}
+  </div>
+</div>

@@ -1,0 +1,212 @@
+ 
+Санкт-Петербург  2024 
+ 
+                   Университет ИТМО 
+      Ульмский Университет 
+ 
+ 
+ 
+ 
+ 
+ 
+На правах рукописи 
+ 
+ 
+Дресвянский Денис Владиславович 
+Многомодальный контекстный анализ динамики 
+аффективных состояний в коллаборативных 
+группах пользователей 
+ 
+Диссертация на соискание учёной степени 
+кандидата технических наук 
+ 
+ 
+
+ 
+Санкт-Петербург  2024 
+  
+           Университет ИТМО                                                   Ульмский Университет 
+    
+ 
+ 
+ 
+ 
+ 
+На правах рукописи 
+ 
+ 
+ 
+Дресвянский Денис Владиславович 
+Многомодальный контекстный анализ динамики 
+аффективных состояний в коллаборативных 
+группах пользователей 
+ 
+Специальность  2.3.8. 
+«Информатика и информационные процессы (технические науки)» 
+ 
+Диссертация на соискание учёной степени  
+кандидата технических наук 
+ 
+ 
+ 
+ 
+ 
+Научный руководитель: 
+доктор технических наук, профессор 
+Карпов Алексей Анатольевич 
+ 
+Научный соруководитель: 
+доктор технических наук, профессор 
+Минкер Вольфган Манфред 
+
+ 
+ 
+Диссертация подготовлена в: федеральное государственное автономное образовательное 
+учреждение высшего образования «Национальный исследовательский университет ИТМО», 
+Ульмский Университет. 
+ 
+Научный руководитель: 
+ 
+ 
+Научный соруководитель: 
+ 
+  доктор технических наук, профессор 
+  Карпов Алексей Анатольевич 
+ 
+ доктор технических наук, профессор 
+ Минкер Вольфган Манфред 
+ 
+ 
+ 
+Официальные оппоненты: 
+Костюченко Евгений Юрьевич, кандидат технических 
+наук, доцент, федеральное государственное бюджетное 
+образовательное 
+учреждение 
+высшего 
+образования 
+«Томский 
+государственный 
+университет 
+систем 
+управления и радиоэлектроники», Институт системной 
+интеграции и безопасности 
+  
+Савченко Андрей Владимирович, доктор технических 
+наук, доцент, Нижегородский филиал федерального 
+государственного 
+автономного 
+образовательного 
+учреждения 
+высшего 
+образования 
+«Национальный 
+исследовательский 
+университет 
+«Высшая 
+школа  
+экономики» (НИУ ВШЭ - Нижний Новгород), профессор, 
+кафедра информационных систем и технологий 
+  
+ 
+ 
+ 
+Защита состоится 13.12.2024 г. в 13:00 часов на заседании диссертационного совета 04.22.12 
+Универcитета ИТМО. Санкт-Петербург, Кронверкский проспект, 49, ауд. 1312. 
+ 
+ 
+ 
+С диссертацией можно ознакомиться в библиотеке Университета ИТМО по адресу:  
+Санкт-Петербург, ул. Ломоносова, д. 9 и на сайте https://dissovet.itmo.ru. 
+ 
+ 
+ 
+Ученый 
+секретарь 
+диссертационного 
+совета 
+04.22.00 
+Университета 
+ИТМО, 
+доктор 
+физико-математических наук, доцент, Холодова Светлана Евгеньевна. 
+ 
+
+ 
+Saint-Petersburg  2024 
+    
+                   ITMO University                                                           Ulm University 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+As a manuscript 
+ 
+ 
+Dresvyanskiy Denis Vladislavovich 
+Multi-Modal Contextual Analysis of Affective 
+Dynamics in Collaborative Groups 
+Speciality 2.3.8. 
+Computer Science and Information Processes (Engineering) 
+ 
+Academic dissertation сandidate of engineering 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Supervisor:  
+Doctor of Engineering, Professor 
+Karpov Alexey A. 
+ 
+Co-supervisor:  
+Doctor of Engineering, Professor 
+Minker Wolfgang 
+
+ 
+ 
+The research was carried out at:  ITMO University, Ulm University. 
+ 
+ 
+Supervisor: 
+ 
+ 
+Co-supervisor:  
+ 
+ 
+  Doctor of Engineering, Professor 
+  Karpov Alexey A. 
+ 
+  Doctor of Engineering, Professor 
+  Minker Wolfgang 
+ 
+ 
+Official opponents: 
+Kostyuchenko Evgeny Y., PhD, Federal State Budgetary Educational 
+Institution of Higher Education "Tomsk State University of Control 
+Systems and Radioelectronics", Institute for Systems Integration and 
+Security 
+ 
+Savchenko Andrey V., Doctor of Technical Sciences, National Research 
+University Higher School of Economics (Campus in Nizhny Novgorod), 
+Professor Department of Information Systems and Technologies 
+ 
+ 
+ 
+ 
+ 
+ 
+The defense will be held on 13.12.2024 at 13:00 at the meeting of the ITMO University Dissertation 
+Council 04.22.12. 
+ 
+ 
+The thesis is available in the Library of ITMO University, Lomonosova St. 9, Saint-Pete

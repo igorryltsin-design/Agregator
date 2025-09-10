@@ -1,0 +1,651 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="layout-3cols">
+  <!-- Р›РµРІР°СЏ РєРѕР»РѕРЅРєР° СЃ С„РёР»СЊС‚СЂР°РјРё -->
+  <div class="left-col">
+    <div class="card sticky-top">
+      <div class="card-header fw-bold">Р¤РёР»СЊС‚СЂС‹ Рё СѓРїСЂР°РІР»РµРЅРёРµ</div>
+      <div class="card-body">
+        <style>
+          /* Hide legacy search controls inside the top input-group only */
+          .left-col .card-body .input-group > input[name="q"][type="search"]{ display:none !important; }
+          .left-col .card-body .input-group > button[type="submit"]{ display:none !important; }
+        </style>
+        <form action="{{ url_for('index') }}" method="get">
+          <input type="hidden" name="preview_file" id="preview_file_input" value="{{ request.args.get('preview_file', '') }}">
+          <div class="input-group mb-2">
+             <input type="text" id="ai-input" class="form-control" placeholder="РЎРїСЂРѕСЃРёС‚Рµ РР Рѕ СЃРѕРґРµСЂР¶РёРјРѕРј...">
+             <button class="btn btn-outline-primary" id="ai-search-btn" type="button">РќР°Р№С‚Рё РР</button>
+             <input type="search" name="q" class="form-control" placeholder="РџРѕРёСЃРє..." value="{{ q or '' }}">
+             <button class="btn btn-outline-primary" type="submit">РќР°Р№С‚Рё</button>
+           </div>
+          <div id="ai-status" class="small text-muted mb-2"></div>
+          <select name="type" class="form-select mb-2">
+            <option value="">Р’СЃРµ С‚РёРїС‹</option>
+            {% for t, cnt in types %}
+              <option value="{{ t }}" {% if material_type==t %}selected{% endif %}>{{ t or "вЂ”" }} ({{ cnt }})</option>
+            {% endfor %}
+          </select>
+          <div class="mb-2">
+            <label class="form-label">Р“РѕРґ:</label>
+            <div class="input-group">
+              <input type="text" name="year_from" class="form-control" placeholder="РѕС‚" value="{{ year_from or '' }}">
+              <input type="text" name="year_to" class="form-control" placeholder="РґРѕ" value="{{ year_to or '' }}">
+            </div>
+          </div>
+          
+          <button class="btn btn-sm btn-outline-primary w-100">РџСЂРёРјРµРЅРёС‚СЊ С„РёР»СЊС‚СЂС‹</button>
+        </form>
+        <hr/>
+        <div>
+          <p class="fw-semibold mb-2">РўРµРіРё</p>
+          <form action="{{ url_for('index') }}" method="get" class="mb-2">
+            <input type="hidden" name="q" value="{{ q or '' }}">
+            <input type="hidden" name="type" value="{{ material_type or '' }}">
+            <input type="hidden" name="year_from" value="{{ year_from or '' }}">
+            <input type="hidden" name="year_to" value="{{ year_to or '' }}">
+            <div class="tag-facets" style="max-height: 38vh; overflow:auto; padding-right:.25rem;">
+              {% if tag_facets %}
+              {% for key, options in tag_facets.items() %}
+                <details class="mb-2">
+                  <summary class="d-flex align-items-center" style="cursor:pointer;">{{ key }}</summary>
+                  <div class="mt-2">
+                    {% for val, cnt in options[:30] %}
+                      {% set pair = key ~ '=' ~ val %}
+                      <label class="d-flex align-items-center mb-1" style="gap:.4rem;">
+                        <input type="checkbox" name="tag" value="{{ pair }}" {% if pair in tag_filters %}checked{% endif %}>
+                        <span class="text-truncate" title="{{ val }}">{{ val }}</span>
+                        <span class="badge ms-auto {% if cnt == 0 %}badge-zero{% endif %}" title="{% if cnt == 0 %}РќРµС‚ СЂРµР·СѓР»СЊС‚Р°С‚РѕРІ РІ С‚РµРєСѓС‰РµРј РєРѕРЅС‚РµРєСЃС‚Рµ{% endif %}">{{ cnt }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </details>
+              {% endfor %}
+              {% else %}
+                <div class="text-muted">РќРµС‚ С‚РµРіРѕРІ РґР»СЏ С‚РµРєСѓС‰РµР№ РІС‹Р±РѕСЂРєРё.</div>
+              {% endif %}
+            </div>
+            <div class="d-flex mt-2" style="gap:.5rem;">
+              <button class="btn btn-sm btn-outline-primary flex-fill" type="submit">РџСЂРёРјРµРЅРёС‚СЊ</button>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('index', q=q, type=material_type, year_from=year_from, year_to=year_to) }}">РЎР±СЂРѕСЃРёС‚СЊ С‚РµРіРё</a>
+            </div>
+          </form>
+        </div>
+        <hr/>
+        <div class="mt-2">
+          <h6 class="mb-2">Р‘С‹СЃС‚СЂС‹Р№ РёРјРїРѕСЂС‚</h6>
+          <div id="quick-dropzone" style="border:2px dashed rgba(0,0,0,0.2); border-radius:10px; padding:.6rem; text-align:center; color:var(--muted); cursor:pointer;">
+            РџРµСЂРµС‚Р°С‰РёС‚Рµ С„Р°Р№Р»С‹/РїР°РїРєРё РёР»Рё РєР»РёРєРЅРёС‚Рµ
+          </div>
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="quick-scan" checked>
+            <label class="form-check-label" for="quick-scan">РЎСЂР°Р·Сѓ СЃРєР°РЅРёСЂРѕРІР°С‚СЊ</label>
+          </div>
+          <div id="quick-progress" class="mt-2 d-none" style="height:8px; background: var(--muted-bg); border-radius:6px; overflow:hidden;">
+            <div id="quick-bar" style="height:100%; width:0%; background: var(--accent);"></div>
+          </div>
+          <input type="file" id="quick-file" class="d-none" multiple webkitdirectory directory>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Р¦РµРЅС‚СЂР°Р»СЊРЅР°СЏ РєРѕР»РѕРЅРєР° СЃРѕ СЃРїРёСЃРєРѕРј С„Р°Р№Р»РѕРІ -->
+  <div class="center-col">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="mb-0">Р РµР·СѓР»СЊС‚Р°С‚С‹</h5>
+      <div class="text-muted" id="file-count">{{ files|length }} Р·Р°РїРёСЃРµР№</div>
+    </div>
+    </div>
+    <div class=" list-group counter vh-100 overflow-auto pb-5\ id=\file-list\>
+ {% for f in files %}
+ {% set chips = ' %}
+ {% if (f.material_type or ')|lower == 'audio' and tag_filters %}
+ {% set _tmp %}
+ </div>
+ </div>
+ <div class=\list-group counter vh-100 overflow-auto pb-5\ id=\file-list\>
+        {% set chips = '' %}
+        {% if (f.material_type or '')|lower == 'audio' and tag_filters %}
+          {% set _tmp %}
+            {% for t in f.tags %}
+              {% set pair = t.key ~ '=' ~ t.value %}
+              {% if pair in tag_filters %}
+                <span class="tag-chip tag-chip-match" title="{{ t.key }}={{ t.value }}">{{ t.key }}={{ t.value }}</span>
+              {% endif %}
+            {% endfor %}
+          {% endset %}
+          {% set chips = _tmp %}
+        {% endif %}
+        <a class="list-group-item list-group-item-action {% if chips|trim %}audio-hit{% endif %}"
+           href="{{ url_for('preview_file', rel_path=(f.rel_path|replace('\\','/'))) }}"
+           data-detail-url="{{ url_for('file_detail', file_id=f.id) }}"
+           data-file-id="{{ f.id }}">
+          <div class="d-flex">
+            <span class="row-num" aria-hidden="true"></span>
+            <div class="flex-grow-1">
+              <div class="d-flex w-100 justify-content-between align-items-center">
+                <h6 class="mb-1 text-truncate">{{ f.title or f.filename }}</h6>
+                <div class="d-flex align-items-center ms-2" style="gap:.35rem;">
+                  {% if f.year %}<span class="type-badge" title="Р“РѕРґ">{{ f.year }}</span>{% endif %}
+                  {% if f.material_type %}
+                    {% set mt = f.material_type or '' %}
+                    {% set lc = mt|lower %}
+                    {% set type_class = 'badge-default' %}
+                    {% if 'СЃС‚Р°С‚' in lc or 'article' in lc or 'paper' in lc %}
+                      {% set type_class = 'badge-article' %}
+                    {% elif 'РєРЅРёРі' in lc or 'book' in lc %}
+                      {% set type_class = 'badge-book' %}
+                    {% elif 'РґРёСЃСЃРµСЂ' in lc or 'thesis' in lc or 'phd' in lc %}
+                      {% set type_class = 'badge-thesis' %}
+                    {% elif 'РѕС‚С‡РµС‚' in lc or 'РѕС‚С‡С‘С‚' in lc or 'report' in lc %}
+                      {% set type_class = 'badge-report' %}
+                    {% elif 'РїСЂРµР·РµРЅ' in lc or 'presentation' in lc or 'СЃР»Р°Р№Рґ' in lc %}
+                      {% set type_class = 'badge-presentation' %}
+                    {% elif 'РїР°С‚РµРЅС‚' in lc or 'patent' in lc %}
+                      {% set type_class = 'badge-patent' %}
+                    {% elif 'С‚РµР·' in lc or 'proceed' in lc or 'СЃР±РѕСЂРЅРёРє' in lc or 'РєРѕРЅС„РµСЂРµРЅС†' in lc %}
+                      {% set type_class = 'badge-proceedings' %}
+                    {% elif 'audio' in lc or 'Р°СѓРґРёРѕ' in lc %}
+                      {% set type_class = 'badge-audio' %}
+                    {% elif 'image' in lc or 'РёР·РѕР±СЂР°Р¶' in lc or 'РєР°СЂС‚РёРЅ' in lc %}
+                      {% set type_class = 'badge-image' %}
+                    {% endif %}
+                    {% set mt_norm = (f.material_type or '')|lower %}
+                    {% set type_ru_map = {
+                      'dissertation':'Р”РёСЃСЃРµСЂС‚Р°С†РёСЏ', 'dissertation_abstract':'РђРІС‚РѕСЂРµС„РµСЂР°С‚',
+                      'article':'РЎС‚Р°С‚СЊСЏ', 'textbook':'РЈС‡РµР±РЅРёРє', 'monograph':'РњРѕРЅРѕРіСЂР°С„РёСЏ',
+                      'report':'РћС‚С‡С‘С‚', 'patent':'РџР°С‚РµРЅС‚', 'presentation':'РџСЂРµР·РµРЅС‚Р°С†РёСЏ',
+                      'proceedings':'РњР°С‚РµСЂРёР°Р»С‹ РєРѕРЅС„РµСЂРµРЅС†РёРё', 'standard':'РЎС‚Р°РЅРґР°СЂС‚',
+                      'note':'Р—Р°РјРµС‚РєРё', 'document':'Р”РѕРєСѓРјРµРЅС‚', 'audio':'РђСѓРґРёРѕ', 'image':'РР·РѕР±СЂР°Р¶РµРЅРёРµ'
+                    } %}
+                    <span class="type-badge {{ type_class }}" title="РўРёРї" data-type="{{ f.material_type }}">{{ type_ru_map.get(mt_norm, f.material_type) }}</span>
+                  {% endif %}
+                  <button type="button" class="btn btn-sm btn-outline-secondary ms-2 refresh-btn" data-id="{{ f.id }}" title="РћР±РЅРѕРІРёС‚СЊ С‚РµРіРё">рџ”„</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary ms-2 rename-btn" data-id="{{ f.id }}" title="РџРµСЂРµРёРјРµРЅРѕРІР°С‚СЊ">вњЏпёЏ</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger ms-2 delete-btn" data-id="{{ f.id }}" title="РЈРґР°Р»РёС‚СЊ">рџ—‘пёЏ</button>
+                </div>
+              </div>
+              <p class="mb-1 text-truncate">{{ f.author or "" }}</p>
+              <small class="text-muted text-truncate d-block">{{ f.rel_path }}</small>
+              {% if chips|trim %}
+                <div class="mt-1">{{ chips|safe }}</div>
+              {% endif %}
+            </div>
+          </div>
+        </a>
+      {% else %}
+        <div class="alert alert-info">РќРёС‡РµРіРѕ РЅРµ РЅР°Р№РґРµРЅРѕ. РќР°Р¶РјРёС‚Рµ В«РЎРєР°РЅРёСЂРѕРІР°С‚СЊ РїР°РїРєСѓВ», С‡С‚РѕР±С‹ Р·Р°РіСЂСѓР·РёС‚СЊ РјР°С‚РµСЂРёР°Р»С‹.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- РџСЂР°РІР°СЏ РєРѕР»РѕРЅРєР°: РїСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ -->
+  <div class="right-col">
+    <div class="card sticky-top">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ</span>
+        <a href="#" id="detail-link" class="btn btn-sm btn-outline-secondary d-none" target="_blank">РџРѕРґСЂРѕР±РЅРµРµ в†—</a>
+      </div>
+  <div class="card-body p-0" id="preview-pane">
+         <div id="preview-skeleton" class="skeleton"></div>
+         <iframe id="preview-iframe" src="about:blank" style="width: 100%; height: 100%; border: none; background:#fff; display:block;"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fileList = document.getElementById('file-list');
+    const previewIframe = document.getElementById('preview-iframe');
+    const detailLink = document.getElementById('detail-link');
+    const previewFileInput = document.getElementById('preview_file_input');
+    const previewSkeleton = document.getElementById('preview-skeleton');
+    const fileCountEl = document.getElementById('file-count');
+    let activeItem = null;
+
+    // Function to activate an item and load preview
+    function activateItem(item) {
+        if (activeItem) {
+            activeItem.classList.remove('active');
+        }
+        activeItem = item;
+        activeItem.classList.add('active');
+
+  const previewUrl = item.getAttribute('href');
+  // append embedded=1 to request minimal preview suitable for iframe
+  const sep = previewUrl.includes('?') ? '&' : '?';
+  const previewUrlEmbedded = previewUrl + sep + 'embedded=1';
+        const detailUrl = item.getAttribute('data-detail-url');
+        const fileId = item.getAttribute('data-file-id');
+
+  if (previewSkeleton) previewSkeleton.classList.remove('hidden');
+  previewIframe.src = previewUrlEmbedded;
+        
+        if (detailUrl) {
+            detailLink.href = detailUrl;
+            detailLink.classList.remove('d-none');
+        } else {
+            detailLink.classList.add('d-none');
+        }
+        
+        // Update hidden input for filters
+        if (previewFileInput) {
+            previewFileInput.value = fileId;
+        }
+    }
+
+    fileList.addEventListener('click', function(e) {
+        // handle rename click
+        const rnBtn = e.target.closest('button.rename-btn');
+        if (rnBtn) {
+            e.preventDefault(); e.stopPropagation();
+            const id = rnBtn.getAttribute('data-id');
+            if (!id) return;
+            rnBtn.disabled = true; const prev = rnBtn.textContent; rnBtn.textContent = 'вЂ¦';
+            fetch(`/api/files/${id}/rename-suggest`).then(r=>r.json()).then(sug=>{
+                rnBtn.textContent = prev; rnBtn.disabled = false;
+                if (!sug || !sug.ok) { alert('РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РёРјСЏ'); return; }
+                const base = prompt('РќРѕРІРѕРµ РёРјСЏ (Р±РµР· СЂР°СЃС€РёСЂРµРЅРёСЏ):', sug.suggested || '');
+                if (base === null) return;
+                fetch(`/api/files/${id}/rename`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ base }) })
+                  .then(r=>r.json()).then(ans=>{
+                    if (!ans || !ans.ok) { alert('РџРµСЂРµРёРјРµРЅРѕРІР°РЅРёРµ РЅРµ СѓРґР°Р»РѕСЃСЊ: ' + (ans && ans.error || '')); return; }
+                    // РћР±РЅРѕРІРёРј РїРѕРґРїРёСЃСЊ РІ СЃРїРёСЃРєРµ Рё РїСѓС‚СЊ
+                    const item = rnBtn.closest('a.list-group-item-action');
+                    const p = item && item.querySelector('small.text-muted');
+                    if (p && ans.rel_path) p.textContent = ans.rel_path;
+                    if (item && ans.rel_path) item.setAttribute('href', '/preview/' + String(ans.rel_path).replace(/\\\\/g,'/'));
+                    const h = item && item.querySelector('h6');
+                    if (h && base) h.textContent = base;
+                    // РµСЃР»Рё Р°РєС‚РёРІРЅС‹Р№ вЂ” РїРµСЂРµР·Р°РіСЂСѓР·РёРј РїСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ (С‡С‚РѕР±С‹ РїСѓС‚СЊ РѕР±РЅРѕРІРёР»СЃСЏ)
+                    if (item && item.classList.contains('active')){
+                        const iframe = document.getElementById('preview-iframe');
+                        if (iframe) { iframe.src = 'about:blank'; setTimeout(()=>{ item.click(); }, 50); }
+                    }
+                  });
+            }).catch(()=>{ rnBtn.textContent = prev; rnBtn.disabled = false; alert('РћС€РёР±РєР° СЃРµС‚Рё'); });
+            return;
+        }
+        // handle refresh click
+        const refBtn = e.target.closest('button.refresh-btn');
+        if (refBtn) {
+            e.preventDefault(); e.stopPropagation();
+            const id = refBtn.getAttribute('data-id');
+            if (!id) return;
+            const prev = refBtn.textContent;
+            refBtn.disabled = true; refBtn.textContent = 'вЏі';
+            fetch(`/api/files/${id}/refresh`, { method: 'POST' })
+              .then(r => r.json())
+              .then(data => {
+                  if (!data || !data.ok) throw new Error(data && data.error || 'failed');
+                  // if this item is active, reload preview iframe
+                  const item = refBtn.closest('a.list-group-item-action');
+                  const wasActive = item && item.classList.contains('active');
+                  if (wasActive) {
+                    const iframe = document.getElementById('preview-iframe');
+                    if (iframe && iframe.src && iframe.src !== 'about:blank') {
+                      try {
+                        const url = new URL(iframe.src);
+                        url.searchParams.set('ts', String(Date.now()));
+                        iframe.src = url.toString();
+                      } catch(_) { iframe.src = iframe.src; }
+                    }
+                  }
+                  // update title/author/year text in list item
+                  try {
+                    const f = data.file || {};
+                    const h6 = item.querySelector('h6'); if (h6) h6.textContent = f.title || f.filename || h6.textContent;
+                    const p = item.querySelector('p'); if (p) p.textContent = f.author || '';
+                    const yearBadge = item.querySelector('span.type-badge[title="Р“РѕРґ"]');
+                    if (yearBadge) { if (f.year) yearBadge.textContent = f.year; else yearBadge.remove(); }
+                  } catch(_) {}
+                  refBtn.textContent = 'вњ“';
+                  setTimeout(()=>{ refBtn.textContent = prev; refBtn.disabled = false; }, 800);
+              })
+              .catch(() => { refBtn.textContent = prev; refBtn.disabled = false; alert('РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ'); });
+            return;
+        }
+        // (СѓРґР°Р»РµРЅРёРµ РїРµСЂРµРЅРµСЃРµРЅРѕ РІ РјРѕРґР°Р»РєСѓ РЅРёР¶Рµ)
+
+        const targetItem = e.target.closest('a.list-group-item-action');
+        if (targetItem) {
+            e.preventDefault();
+            activateItem(targetItem);
+            // Update URL without reloading
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('preview_file', targetItem.getAttribute('data-file-id'));
+            window.history.replaceState({path: newUrl.href}, '', newUrl.href);
+        }
+    });
+
+    // Hide skeleton when iframe finishes loading
+    previewIframe.addEventListener('load', function() {
+      if (previewSkeleton) previewSkeleton.classList.add('hidden');
+    });
+
+    // Keyboard navigation: Up/Down to move, Enter to open details
+    window.addEventListener('keydown', function(e) {
+      if (!fileList) return;
+      if (['ArrowDown','ArrowUp','Enter'].includes(e.key)) e.preventDefault();
+      if (e.key === 'ArrowDown') {
+        const items = Array.from(fileList.querySelectorAll('a.list-group-item-action'));
+        if (!items.length) return;
+        const idx = items.indexOf(activeItem);
+        const next = items[Math.min(items.length - 1, Math.max(0, idx + 1))] || items[0];
+        if (next && next !== activeItem) {
+          activateItem(next);
+          next.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'ArrowUp') {
+        const items = Array.from(fileList.querySelectorAll('a.list-group-item-action'));
+        if (!items.length) return;
+        const idx = items.indexOf(activeItem);
+        const prev = items[Math.max(0, idx - 1)] || items[0];
+        if (prev && prev !== activeItem) {
+          activateItem(prev);
+          prev.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'Enter') {
+        if (detailLink && !detailLink.classList.contains('d-none')) {
+          window.open(detailLink.href, '_blank');
+        }
+      }
+    });
+
+    // On page load, check if a file should be pre-selected
+    const urlParams = new URLSearchParams(window.location.search);
+    const fileToPreview = urlParams.get('preview_file');
+    if (fileToPreview) {
+        const itemToActivate = fileList.querySelector(`[data-file-id="${fileToPreview}"]`);
+        if (itemToActivate) {
+            activateItem(itemToActivate);
+            itemToActivate.scrollIntoView({ block: 'center' });
+        }
+    } else {
+        // If no file is selected, load the first one if it exists
+  const firstItem = fileList.querySelector('a.list-group-item-action');
+        if (firstItem) {
+            activateItem(firstItem);
+        }
+    }
+});
+</script>
+
+<!-- РњРѕРґР°Р»СЊРЅРѕРµ РѕРєРЅРѕ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ СѓРґР°Р»РµРЅРёСЏ -->
+<div id="delete-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.35); display:none; align-items:center; justify-content:center; z-index:3000;">
+  <div class="card" style="width: 420px; max-width: 92%;">
+    <div class="card-body">
+      <h6 class="card-title mb-2">РЈРґР°Р»РёС‚СЊ Р·Р°РїРёСЃСЊ</h6>
+      <div class="text-muted mb-2" id="del-filename"></div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="del-fs">
+        <label class="form-check-label" for="del-fs">РЈРґР°Р»РёС‚СЊ С„Р°Р№Р» СЃ РґРёСЃРєР°</label>
+      </div>
+      <div class="d-flex" style="gap:.5rem; justify-content:flex-end;">
+        <button class="btn btn-outline-secondary btn-sm" id="del-cancel" type="button">РћС‚РјРµРЅР°</button>
+        <button class="btn btn-danger btn-sm" id="del-confirm" type="button">РЈРґР°Р»РёС‚СЊ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Deletion modal logic with optional filesystem removal
+document.addEventListener('DOMContentLoaded', ()=>{
+  const modal = document.getElementById('delete-modal');
+  const nameEl = document.getElementById('del-filename');
+  const fsCb = document.getElementById('del-fs');
+  const btnCancel = document.getElementById('del-cancel');
+  const btnConfirm = document.getElementById('del-confirm');
+  const fileList = document.getElementById('file-list');
+  const fileCountEl = document.getElementById('file-count');
+  let target = { id:null, item:null };
+
+  function openDel(item){
+    target.item = item;
+    target.id = item.getAttribute('data-file-id');
+    const title = item.querySelector('h6')?.textContent || '';
+    nameEl.textContent = title;
+    fsCb.checked = false;
+    modal.style.display = 'flex';
+  }
+  function closeDel(){ modal.style.display = 'none'; target = {id:null,item:null}; }
+
+  fileList.addEventListener('click', function(e){
+    const delBtn = e.target.closest('button.delete-btn');
+    if (delBtn){
+      e.preventDefault(); e.stopPropagation();
+      const li = delBtn.closest('a.list-group-item-action');
+      if (li) openDel(li);
+    }
+  });
+  btnCancel.addEventListener('click', closeDel);
+  modal.addEventListener('click', (e)=>{ if (e.target === modal) closeDel(); });
+  btnConfirm.addEventListener('click', ()=>{
+    if (!target.id || !target.item) return;
+    const rm = fsCb.checked ? '?rm=1' : '';
+    fetch(`/api/files/${target.id}${rm}`, { method: 'DELETE' }).then(r=>{
+      if (r.ok){
+        const wasActive = target.item.classList.contains('active');
+        target.item.remove();
+        try{
+          const m = fileCountEl && fileCountEl.textContent.match(/\d+/);
+          if (m) { const n = Math.max(0, (parseInt(m[0],10)||0) - 1); fileCountEl.textContent = `${n} Р·Р°РїРёСЃРµР№`; }
+        }catch(e){}
+        if (wasActive){
+          const next = fileList.querySelector('a.list-group-item-action');
+          if (next){
+            next.click();
+          } else {
+            const iframe = document.getElementById('preview-iframe');
+            const detailLink = document.getElementById('detail-link');
+            if (iframe) iframe.src = 'about:blank';
+            if (detailLink) detailLink.classList.add('d-none');
+          }
+        }
+        closeDel();
+      } else { alert('РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ Р·Р°РїРёСЃСЊ'); }
+    }).catch(()=> alert('РћС€РёР±РєР° СЃРµС‚Рё РїСЂРё СѓРґР°Р»РµРЅРёРё'));
+  });
+});
+</script>
+
+<script>
+// Р‘С‹СЃС‚СЂС‹Р№ РёРјРїРѕСЂС‚ РЅР° РіР»Р°РІРЅРѕР№: СЂР°Р±РѕС‚Р°РµС‚ РѕС„Р»Р°Р№РЅ, XHR СЃ РїСЂРѕРіСЂРµСЃСЃРѕРј
+document.addEventListener('DOMContentLoaded', ()=>{
+  const dz = document.getElementById('quick-dropzone');
+  const fileInput = document.getElementById('quick-file');
+  const quickScan = document.getElementById('quick-scan');
+  const prog = document.getElementById('quick-progress');
+  const bar = document.getElementById('quick-bar');
+  if (!dz) return;
+
+  function uploadFiles(files){
+    if (!files || !files.length) return;
+    const fd = new FormData();
+    for (const f of files){ const rp = f.webkitRelativePath || f.name; fd.append('files', f, rp); }
+    if (quickScan.checked) fd.append('start_scan','on');
+    fd.append('extract_text','on');
+    fd.append('prune','on');
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '{{ url_for('import_files') }}');
+    prog.classList.remove('d-none');
+    bar.style.width = '0%';
+    xhr.upload.onprogress = (e)=>{ if (e.lengthComputable){ bar.style.width = Math.round(e.loaded/e.total*100) + '%'; } };
+    xhr.onload = ()=>{ if (xhr.status>=200 && xhr.status<400){ window.location = quickScan.checked ? '{{ url_for('settings') }}' : '{{ url_for('index') }}'; } else { alert('РћС€РёР±РєР° РёРјРїРѕСЂС‚Р°'); } };
+    xhr.onerror = ()=> alert('РЎР±РѕР№ СЃРµС‚Рё РїСЂРё РёРјРїРѕСЂС‚Рµ');
+    xhr.send(fd);
+  }
+
+  dz.addEventListener('click', ()=> fileInput.click());
+  dz.addEventListener('dragover', (e)=>{ e.preventDefault(); dz.style.background='var(--muted-bg)'; });
+  dz.addEventListener('dragleave', ()=>{ dz.style.background=''; });
+  dz.addEventListener('drop', (e)=>{
+    e.preventDefault(); dz.style.background='';
+    const items = e.dataTransfer.items;
+    if (items && items.length && items[0].webkitGetAsEntry){
+      const tasks=[]; const accum=[];
+      function traverse(en, base){
+        return new Promise((resolve)=>{
+          if (en.isFile){ en.file(f=>{ f.relativePath = (base? base+'/' : '') + f.name; accum.push(f); resolve(); }); }
+          else if (en.isDirectory){ const rd=en.createReader(); rd.readEntries(ents=>{ Promise.all(ents.map(ch=>traverse(ch, (base? base+'/' : '')+en.name))).then(resolve); }); }
+          else resolve();
+        });
+      }
+      for (const it of items){ const en = it.webkitGetAsEntry(); if (en) tasks.push(traverse(en, '')); }
+      Promise.all(tasks).then(()=> uploadFiles(accum));
+    } else {
+      uploadFiles(e.dataTransfer.files);
+    }
+  });
+  fileInput.addEventListener('change', ()=> uploadFiles(fileInput.files));
+});
+</script>
+
+<!-- РњРѕРґР°Р»СЊРЅРѕРµ РѕРєРЅРѕ РїСЂРѕРіСЂРµСЃСЃР° СЃРєР°РЅРёСЂРѕРІР°РЅРёСЏ -->
+<div id="scan-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.35); display:none; align-items:center; justify-content:center; z-index:2000;">
+  <div class="card" style="width: 520px; max-width: 92%;">
+    <div class="card-body">
+      <h6 class="card-title mb-2">РЎРєР°РЅРёСЂРѕРІР°РЅРёРµ Р±РёР±Р»РёРѕС‚РµРєРё</h6>
+      <div class="tabs d-flex mb-2" style="gap:.5rem;">
+        <button class="btn btn-outline-secondary btn-sm tab active" data-tab="status">РЎС‚Р°С‚СѓСЃ</button>
+        <button class="btn btn-outline-secondary btn-sm tab" data-tab="log">Р›РѕРі</button>
+      </div>
+      <div id="scan-pane-status">
+        <div class="mb-2 text-muted" id="scan-stage">Р“РѕС‚РѕРІРѕ Рє Р·Р°РїСѓСЃРєСѓвЂ¦</div>
+        <div class="progress" style="height:10px; background: var(--muted-bg); border-radius:6px; overflow:hidden;">
+          <div id="scan-bar" style="height:100%; width:0%; background: var(--accent);"></div>
+        </div>
+        <div class="d-flex mt-2" style="gap:.5rem; align-items:center;">
+          <div id="scan-stats" class="text-muted">0 / 0</div>
+          <div id="scan-eta" class="text-muted ms-2"></div>
+          <div class="ms-auto">
+            <button class="btn btn-outline-secondary btn-sm" id="scan-cancel-btn" type="button">РћС‚РјРµРЅРёС‚СЊ</button>
+            <button class="btn btn-primary btn-sm d-none" id="scan-close-btn" type="button">Р—Р°РєСЂС‹С‚СЊ</button>
+          </div>
+        </div>
+      </div>
+      <div id="scan-pane-log" class="d-none">
+        <div id="scan-log" style="max-height: 240px; overflow:auto; background: var(--muted-bg); padding:.5rem; border-radius:6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;"></div>
+      </div>
+    </div>
+  </div>
+  <style>
+    .progress { box-shadow: 0 0 0 1px rgba(0,0,0,0.06) inset; }
+  </style>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  const form = document.getElementById('scan-form');
+  const startBtn = document.getElementById('scan-start-btn');
+  const modal = document.getElementById('scan-modal');
+  const bar = document.getElementById('scan-bar');
+  const stats = document.getElementById('scan-stats');
+  const eta = document.getElementById('scan-eta');
+  const stage = document.getElementById('scan-stage');
+  const cancelBtn = document.getElementById('scan-cancel-btn');
+  const closeBtn = document.getElementById('scan-close-btn');
+  const tabs = document.querySelectorAll('#scan-modal .tab');
+  const paneStatus = document.getElementById('scan-pane-status');
+  const paneLog = document.getElementById('scan-pane-log');
+  const logView = document.getElementById('scan-log');
+  let pollTimer = null;
+
+  function showModal() { modal.style.display = 'flex'; }
+  function hideModal() { modal.style.display = 'none'; }
+  function setBar(p){ bar.style.width = Math.max(0, Math.min(100, p)) + '%'; }
+
+  async function pollStatusOnce(){
+    const r = await fetch('{{ url_for('scan_status') }}');
+    const s = await r.json();
+    const total = s.total || 0; const done = s.processed || 0;
+    const pct = total ? Math.round(done/total*100) : (s.running ? 5 : 0);
+    setBar(pct);
+    stats.textContent = `${done} / ${total} вЂ” РґРѕР±Р°РІР»РµРЅРѕ ${s.added||0}, РѕР±РЅРѕРІР»РµРЅРѕ ${s.updated||0}, СѓРґР°Р»РµРЅРѕ ${s.removed||0}`;
+    if (s.eta_seconds) {
+      const m = Math.floor(s.eta_seconds/60), sec = s.eta_seconds%60;
+      eta.textContent = `в‰€ РѕСЃС‚Р°Р»РѕСЃСЊ ${m}Рј ${sec}СЃ`;
+    } else { eta.textContent = ''; }
+    let stLabel = s.stage;
+    if (s.stage === 'counting') stLabel = 'РџРѕРґРіРѕС‚РѕРІРєР°вЂ¦';
+    else if (s.stage === 'processing') stLabel = `РћР±СЂР°Р±РѕС‚РєР°: ${s.current||''}`;
+    else if (s.stage === 'llm') stLabel = 'РР·РІР»РµС‡РµРЅРёРµ РјРµС‚Р°РґР°РЅРЅС‹С… (LLM)вЂ¦';
+    else if (s.stage === 'prune') stLabel = 'РЈРґР°Р»РµРЅРёРµ РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‰РёС…вЂ¦';
+    else if (s.stage === 'done') stLabel = 'Р“РѕС‚РѕРІРѕ';
+    else if (s.stage === 'error') stLabel = 'РћС€РёР±РєР°';
+    stage.textContent = stLabel;
+    if (s.error) stage.textContent += `: ${s.error}`;
+    if (s.history && Array.isArray(s.history)){
+      logView.innerHTML = s.history.map(h=>{
+        const d = new Date(h.t*1000); const ts = d.toLocaleTimeString();
+        const lvl = (h.level||'info').toUpperCase();
+        return `<div><span class="text-muted">[${ts}]</span> <b>${lvl}</b> ${h.msg}</div>`;
+      }).join('');
+      // Р°РІС‚Рѕ-СЃРєСЂРѕР»Р» РІРЅРёР·
+      logView.scrollTop = logView.scrollHeight;
+    }
+    if (!s.running && (s.stage === 'done' || s.stage === 'error')){
+      clearInterval(pollTimer); pollTimer = null;
+      cancelBtn.classList.add('d-none');
+      closeBtn.classList.remove('d-none');
+    }
+  }
+
+  function startPolling(){
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollStatusOnce, 600);
+    pollStatusOnce();
+  }
+
+  startBtn?.addEventListener('click', async ()=>{
+    const fd = new FormData(form);
+    try{
+      const r = await fetch('{{ url_for('scan_start') }}', { method: 'POST', body: fd });
+      if (r.ok) { showModal(); cancelBtn.classList.remove('d-none'); closeBtn.classList.add('d-none'); setBar(0); startPolling(); }
+      else if (r.status === 409) { showModal(); stage.textContent = 'РЎРєР°РЅРёСЂРѕРІР°РЅРёРµ СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏвЂ¦'; startPolling(); }
+      else { alert('РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ СЃРєР°РЅРёСЂРѕРІР°РЅРёРµ'); }
+    } catch(e){ alert('РћС€РёР±РєР° Р·Р°РїСѓСЃРєР°: ' + e); }
+  });
+
+  cancelBtn?.addEventListener('click', async ()=>{
+    cancelBtn.disabled = true;
+    await fetch('{{ url_for('scan_cancel') }}', { method: 'POST' });
+  });
+
+  closeBtn?.addEventListener('click', ()=>{ hideModal(); window.location.reload(); });
+
+  // РўР°Р±С‹ РІ РјРѕРґР°Р»РєРµ
+  tabs.forEach(b=>{
+    b.addEventListener('click', ()=>{
+      tabs.forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      const tab = b.dataset.tab;
+      paneStatus.classList.toggle('d-none', tab !== 'status');
+      paneLog.classList.toggle('d-none', tab !== 'log');
+      try { localStorage.setItem('scan_modal_tab', tab); } catch(e){}
+    });
+  });
+
+  // РђРІС‚РѕРїРѕРґС…РІР°С‚ СЃРѕСЃС‚РѕСЏРЅРёСЏ РїСЂРё РїРµСЂРµР·Р°РіСЂСѓР·РєРµ
+  (async ()=>{
+    try{
+      const r = await fetch('{{ url_for('scan_status') }}');
+      if (!r.ok) return;
+      const s = await r.json();
+      // РІРѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ РІС‹Р±СЂР°РЅРЅСѓСЋ РІРєР»Р°РґРєСѓ
+      const savedTab = (localStorage.getItem('scan_modal_tab') || 'status');
+      tabs.forEach(x=>x.classList.toggle('active', x.dataset.tab === savedTab));
+      paneStatus.classList.toggle('d-none', savedTab !== 'status');
+      paneLog.classList.toggle('d-none', savedTab !== 'log');
+
+      if (s.running || ['counting','processing','llm','prune'].includes(s.stage)){
+        showModal(); cancelBtn.classList.remove('d-none'); closeBtn.classList.add('d-none'); startPolling();
+      }
+    }catch(e){ /* ignore */ }
+  })();
+});
+</script>
+{% endblock %}

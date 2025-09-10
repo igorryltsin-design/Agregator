@@ -1491,6 +1491,8 @@ def index():
     year_to = request.args.get("year_to", "").strip()
     size_min = request.args.get("size_min", "").strip()
     size_max = request.args.get("size_max", "").strip()
+    page = request.args.get("page", 1, type=int)
+    per_page = 50
 
     # base query for facets (without tag filters)
     base_query = File.query
@@ -1566,7 +1568,8 @@ def index():
                 if v not in present_vals:
                     tag_facets[key].append((v, 0))
 
-    files = query.order_by(File.mtime.desc().nullslast()).limit(200).all()
+    pagination = query.order_by(File.mtime.desc().nullslast()).paginate(page=page, per_page=per_page, error_out=False)
+    files = pagination.items
     return render_template(
         "index.html",
         files=files,
@@ -1578,7 +1581,9 @@ def index():
         year_from=year_from,
         year_to=year_to,
         size_min=size_min,
-        size_max=size_max
+        size_max=size_max,
+        pagination=pagination,
+        per_page=per_page
     )
 
 @app.route("/file/<int:file_id>")
@@ -1847,7 +1852,8 @@ def edit(file_id):
         return redirect(url_for("file_detail", file_id=f.id))
 
     tags = Tag.query.filter_by(file_id=f.id).all()
-    return render_template("edit.html", f=f, tags=tags)
+    tag_keys = [row[0] for row in db.session.query(Tag.key).distinct().order_by(Tag.key).all()]
+    return render_template("edit.html", f=f, tags=tags, tag_keys=tag_keys)
 
 @app.route("/api/search")
 def api_search():
@@ -3184,6 +3190,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
             _scan_log(f"Ошибка: {e}", level="error")
         finally:
             SCAN_CANCEL = False
+            db.session.remove()
 
 @app.route("/scan/start", methods=["POST"])
 def scan_start():

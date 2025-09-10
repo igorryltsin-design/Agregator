@@ -27,7 +27,8 @@
               <input type="text" name="year_to" class="form-control" placeholder="До" value="{{ year_to or '' }}">
             </div>
           </div>
-          <button class="btn btn-sm btn-outline-primary w-100">Применить фильтры</button>
+          <button class="btn btn-sm btn-outline-primary w-100" type="submit">Применить фильтры</button>
+          <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="{{ url_for('index') }}">Очистить все фильтры</a>
         </form>
         <hr/>
 
@@ -73,7 +74,13 @@
   <div class="center-col">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h5 class="mb-0">Результаты</h5>
-      <div class="text-muted" id="file-count">{{ files|length }} результатов</div>
+      <div class="text-muted" id="file-count">{{ pagination.total }} результатов</div>
+    </div>
+    <div class="mb-2">
+      {% if q %}<span class="badge bg-secondary me-1">Поиск: {{ q }}</span>{% endif %}
+      {% if material_type %}<span class="badge bg-secondary me-1">Тип: {{ material_type }}</span>{% endif %}
+      {% if year_from or year_to %}<span class="badge bg-secondary me-1">Годы: {{ year_from or '—' }}–{{ year_to or '—' }}</span>{% endif %}
+      {% for tf in tag_filters %}<span class="badge bg-secondary me-1">{{ tf }}</span>{% endfor %}
     </div>
     <div class="list-group counter vh-100 overflow-auto pb-5" id="file-list">
       {% for f in files %}
@@ -129,6 +136,19 @@
         <div class="alert alert-info">Файлы не найдены. Загрузите новые или измените фильтры.</div>
       {% endfor %}
     </div>
+    <nav aria-label="Навигация" class="mt-2">
+      <ul class="pagination">
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('index', q=q, type=material_type, year_from=year_from, year_to=year_to, size_min=size_min, size_max=size_max, tag=tag_filters, page=pagination.prev_num) }}">&laquo;</a></li>
+        {% endif %}
+        {% for p in range(1, pagination.pages + 1) %}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}"><a class="page-link" href="{{ url_for('index', q=q, type=material_type, year_from=year_from, year_to=year_to, size_min=size_min, size_max=size_max, tag=tag_filters, page=p) }}">{{ p }}</a></li>
+        {% endfor %}
+        {% if pagination.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('index', q=q, type=material_type, year_from=year_from, year_to=year_to, size_min=size_min, size_max=size_max, tag=tag_filters, page=pagination.next_num) }}">&raquo;</a></li>
+        {% endif %}
+      </ul>
+    </nav>
   </div>
 
   <!-- Правая панель: предпросмотр -->

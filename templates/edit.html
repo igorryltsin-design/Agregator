@@ -35,18 +35,23 @@
   <h6 class="fw-bold">Гибкие теги</h6>
   <div id="tags">
     {% for t in tags %}
-      <div class="row g-2 mb-2">
-        <div class="col-md-4"><input class="form-control" name="tag_key[]" value="{{ t.key }}"></div>
-        <div class="col-md-8"><input class="form-control" name="tag_value[]" value="{{ t.value }}"></div>
+      <div class="row g-2 mb-2 tag-row">
+        <div class="col-md-4"><input class="form-control" name="tag_key[]" list="tag-keys" value="{{ t.key }}"></div>
+        <div class="col-md-7"><input class="form-control" name="tag_value[]" value="{{ t.value }}"></div>
+        <div class="col-md-1 d-flex align-items-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeTag(this)" aria-label="Удалить тег">×</button></div>
       </div>
     {% else %}
-      <div class="row g-2 mb-2">
-        <div class="col-md-4"><input class="form-control" name="tag_key[]" placeholder="напр. специальность"></div>
-        <div class="col-md-8"><input class="form-control" name="tag_value[]" placeholder="напр. 05.13.01"></div>
+      <div class="row g-2 mb-2 tag-row">
+        <div class="col-md-4"><input class="form-control" name="tag_key[]" list="tag-keys" placeholder="напр. специальность"></div>
+        <div class="col-md-7"><input class="form-control" name="tag_value[]" placeholder="напр. 05.13.01"></div>
+        <div class="col-md-1 d-flex align-items-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeTag(this)" aria-label="Удалить тег">×</button></div>
       </div>
     {% endfor %}
   </div>
-  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addTag()">Добавить тег</button>
+  <datalist id="tag-keys">
+    {% for k in tag_keys %}<option value="{{ k }}">{% endfor %}
+  </datalist>
+  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addTag()" aria-label="Добавить тег" title="Добавить тег">Добавить тег</button>
   <div class="mt-3">
     <button class="btn btn-primary" type="submit">Сохранить</button>
     <a class="btn btn-secondary" href="{{ url_for('file_detail', file_id=f.id) }}">Отмена</a>
@@ -56,12 +61,18 @@
 function addTag() {
   const container = document.getElementById('tags');
   const row = document.createElement('div');
-  row.className = 'row g-2 mb-2';
+  row.className = 'row g-2 mb-2 tag-row';
   row.innerHTML = `
-    <div class="col-md-4"><input class="form-control" name="tag_key[]" placeholder="ключ"></div>
-    <div class="col-md-8"><input class="form-control" name="tag_value[]" placeholder="значение"></div>
+    <div class="col-md-4"><input class="form-control" name="tag_key[]" list="tag-keys" placeholder="ключ"></div>
+    <div class="col-md-7"><input class="form-control" name="tag_value[]" placeholder="значение"></div>
+    <div class="col-md-1 d-flex align-items-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeTag(this)" aria-label="Удалить тег">×</button></div>
   `;
   container.appendChild(row);
+}
+
+function removeTag(btn){
+  const row = btn.closest('.tag-row');
+  if(row) row.remove();
 }
 </script>
 {% endblock %}

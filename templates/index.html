@@ -1,17 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="layout-3cols">
-  <!-- Левая колонка с фильтрами -->
+  <!-- Левая панель: фильтры и ИИ-поиск -->
   <div class="left-col">
     <div class="card sticky-top">
-      <div class="card-header fw-bold">Фильтры и управление</div>
+      <div class="card-header fw-bold">Фильтры каталога</div>
       <div class="card-body">
         <form action="{{ url_for('index') }}" method="get">
           <input type="hidden" name="preview_file" id="preview_file_input" value="{{ request.args.get('preview_file', '') }}">
-          <div class="input-group mb-3">
-             <input type="search" name="q" class="form-control" placeholder="Поиск..." value="{{ q or '' }}">
-             <button class="btn btn-outline-primary" type="submit">Найти</button>
+          <div class="input-group mb-2">
+            <input type="text" id="ai-input" class="form-control" placeholder="Спросите ИИ о содержимом...">
+            <button class="btn btn-outline-primary" id="ai-search-btn" type="button">Найти ИИ</button>
           </div>
+          <div id="ai-status" class="small text-muted mb-2"></div>
+
           <select name="type" class="form-select mb-2">
             <option value="">Все типы</option>
             {% for t, cnt in types %}
@@ -19,16 +21,16 @@
             {% endfor %}
           </select>
           <div class="mb-2">
-            <label class="form-label">Год:</label>
+            <label class="form-label">Годы:</label>
             <div class="input-group">
-              <input type="text" name="year_from" class="form-control" placeholder="от" value="{{ year_from or '' }}">
-              <input type="text" name="year_to" class="form-control" placeholder="до" value="{{ year_to or '' }}">
+              <input type="text" name="year_from" class="form-control" placeholder="От" value="{{ year_from or '' }}">
+              <input type="text" name="year_to" class="form-control" placeholder="До" value="{{ year_to or '' }}">
             </div>
           </div>
-          
           <button class="btn btn-sm btn-outline-primary w-100">Применить фильтры</button>
         </form>
         <hr/>
+
         <div>
           <p class="fw-semibold mb-2">Теги</p>
           <form action="{{ url_for('index') }}" method="get" class="mb-2">
@@ -38,55 +40,40 @@
             <input type="hidden" name="year_to" value="{{ year_to or '' }}">
             <div class="tag-facets" style="max-height: 38vh; overflow:auto; padding-right:.25rem;">
               {% if tag_facets %}
-              {% for key, options in tag_facets.items() %}
-                <details class="mb-2">
-                  <summary class="d-flex align-items-center" style="cursor:pointer;">{{ key }}</summary>
-                  <div class="mt-2">
-                    {% for val, cnt in options[:30] %}
-                      {% set pair = key ~ '=' ~ val %}
-                      <label class="d-flex align-items-center mb-1" style="gap:.4rem;">
-                        <input type="checkbox" name="tag" value="{{ pair }}" {% if pair in tag_filters %}checked{% endif %}>
-                        <span class="text-truncate" title="{{ val }}">{{ val }}</span>
-                        <span class="badge ms-auto {% if cnt == 0 %}badge-zero{% endif %}" title="{% if cnt == 0 %}Нет результатов в текущем контексте{% endif %}">{{ cnt }}</span>
-                      </label>
-                    {% endfor %}
-                  </div>
-                </details>
-              {% endfor %}
+                {% for key, options in tag_facets.items() %}
+                  <details class="mb-2">
+                    <summary class="d-flex align-items-center" style="cursor:pointer;">{{ key }}</summary>
+                    <div class="mt-2">
+                      {% for val, cnt in options[:30] %}
+                        {% set pair = key ~ '=' ~ val %}
+                        <label class="d-flex align-items-center mb-1" style="gap:.4rem;">
+                          <input type="checkbox" name="tag" value="{{ pair }}" {% if pair in tag_filters %}checked{% endif %}>
+                          <span class="text-truncate" title="{{ val }}">{{ val }}</span>
+                          <span class="badge ms-auto {% if cnt == 0 %}badge-zero{% endif %}" title="{% if cnt == 0 %}0 при текущих фильтрах{% endif %}">{{ cnt }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  </details>
+                {% endfor %}
               {% else %}
-                <div class="text-muted">Нет тегов для текущей выборки.</div>
+                <div class="text-muted">Нет данных по теговым фасетам.</div>
               {% endif %}
             </div>
             <div class="d-flex mt-2" style="gap:.5rem;">
               <button class="btn btn-sm btn-outline-primary flex-fill" type="submit">Применить</button>
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('index', q=q, type=material_type, year_from=year_from, year_to=year_to) }}">Сбросить теги</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('index', q=q, type=material_type, year_from=year_from, year_to=year_to) }}">Сбросить</a>
             </div>
           </form>
-        </div>
-        <hr/>
-        <div class="mt-2">
-          <h6 class="mb-2">Быстрый импорт</h6>
-          <div id="quick-dropzone" style="border:2px dashed rgba(0,0,0,0.2); border-radius:10px; padding:.6rem; text-align:center; color:var(--muted); cursor:pointer;">
-            Перетащите файлы/папки или кликните
-          </div>
-          <div class="form-check mt-2">
-            <input class="form-check-input" type="checkbox" id="quick-scan" checked>
-            <label class="form-check-label" for="quick-scan">Сразу сканировать</label>
-          </div>
-          <div id="quick-progress" class="mt-2 d-none" style="height:8px; background: var(--muted-bg); border-radius:6px; overflow:hidden;">
-            <div id="quick-bar" style="height:100%; width:0%; background: var(--accent);"></div>
-          </div>
-          <input type="file" id="quick-file" class="d-none" multiple webkitdirectory directory>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Центральная колонка со списком файлов -->
+  <!-- Центр: результаты -->
   <div class="center-col">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h5 class="mb-0">Результаты</h5>
-      <div class="text-muted" id="file-count">{{ files|length }} записей</div>
+      <div class="text-muted" id="file-count">{{ files|length }} результатов</div>
     </div>
     <div class="list-group counter vh-100 overflow-auto pb-5" id="file-list">
       {% for f in files %}
@@ -102,8 +89,8 @@
           {% endset %}
           {% set chips = _tmp %}
         {% endif %}
-        <a class="list-group-item list-group-item-action {% if chips|trim %}audio-hit{% endif %}" 
-           href="{{ url_for('preview_file', rel_path=f.rel_path) }}"
+        <a class="list-group-item list-group-item-action {% if chips|trim %}audio-hit{% endif %}"
+           href="{{ url_for('preview_file', rel_path=(f.rel_path|replace('\\','/'))) }}"
            data-detail-url="{{ url_for('file_detail', file_id=f.id) }}"
            data-file-id="{{ f.id }}">
           <div class="d-flex">
@@ -115,37 +102,19 @@
                   {% if f.year %}<span class="type-badge" title="Год">{{ f.year }}</span>{% endif %}
                   {% if f.material_type %}
                     {% set mt = f.material_type or '' %}
-                    {% set lc = mt|lower %}
-                    {% set type_class = 'badge-default' %}
-                    {% if 'стат' in lc or 'article' in lc or 'paper' in lc %}
-                      {% set type_class = 'badge-article' %}
-                    {% elif 'книг' in lc or 'book' in lc %}
-                      {% set type_class = 'badge-book' %}
-                    {% elif 'диссер' in lc or 'thesis' in lc or 'phd' in lc %}
-                      {% set type_class = 'badge-thesis' %}
-                    {% elif 'отчет' in lc or 'отчёт' in lc or 'report' in lc %}
-                      {% set type_class = 'badge-report' %}
-                    {% elif 'презен' in lc or 'presentation' in lc or 'слайд' in lc %}
-                      {% set type_class = 'badge-presentation' %}
-                    {% elif 'патент' in lc or 'patent' in lc %}
-                      {% set type_class = 'badge-patent' %}
-                    {% elif 'тез' in lc or 'proceed' in lc or 'сборник' in lc or 'конференц' in lc %}
-                      {% set type_class = 'badge-proceedings' %}
-                    {% elif 'audio' in lc or 'аудио' in lc %}
-                      {% set type_class = 'badge-audio' %}
-                    {% endif %}
                     {% set mt_norm = (f.material_type or '')|lower %}
                     {% set type_ru_map = {
                       'dissertation':'Диссертация', 'dissertation_abstract':'Автореферат',
                       'article':'Статья', 'textbook':'Учебник', 'monograph':'Монография',
-                      'report':'Отчёт', 'patent':'Патент', 'presentation':'Презентация',
-                      'proceedings':'Материалы конференции', 'standard':'Стандарт',
-                      'note':'Заметки', 'document':'Документ', 'audio':'Аудио'
+                      'report':'Отчет', 'patent':'Патент', 'presentation':'Презентация',
+                      'proceedings':'Труды конференции', 'standard':'Стандарт',
+                      'note':'Заметка', 'document':'Документ', 'audio':'Аудио', 'image':'Изображение'
                     } %}
-                    <span class="type-badge {{ type_class }}" title="Тип" data-type="{{ f.material_type }}">{{ type_ru_map.get(mt_norm, f.material_type) }}</span>
+                    <span class="type-badge" title="Тип" data-type="{{ f.material_type }}">{{ type_ru_map.get(mt_norm, f.material_type) }}</span>
                   {% endif %}
-                  <button type="button" class="btn btn-sm btn-outline-secondary ms-2 refresh-btn" data-id="{{ f.id }}" title="Обновить теги">🔄</button>
-                  <button type="button" class="btn btn-sm btn-outline-danger ms-2 delete-btn" data-id="{{ f.id }}" title="Удалить">🗑️</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary ms-2 refresh-btn" data-id="{{ f.id }}" title="Обновить">↻</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary ms-2 rename-btn" data-id="{{ f.id }}" title="Переименовать">✎</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger ms-2 delete-btn" data-id="{{ f.id }}" title="Удалить">✖</button>
                 </div>
               </div>
               <p class="mb-1 text-truncate">{{ f.author or "" }}</p>
@@ -157,215 +126,35 @@
           </div>
         </a>
       {% else %}
-        <div class="alert alert-info">Ничего не найдено. Нажмите «Сканировать папку», чтобы загрузить материалы.</div>
+        <div class="alert alert-info">Файлы не найдены. Загрузите новые или измените фильтры.</div>
       {% endfor %}
     </div>
   </div>
 
-  <!-- Правая колонка: предпросмотр -->
+  <!-- Правая панель: предпросмотр -->
   <div class="right-col">
     <div class="card sticky-top">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span>Предпросмотр</span>
-        <a href="#" id="detail-link" class="btn btn-sm btn-outline-secondary d-none" target="_blank">Подробнее ↗</a>
+        <a href="#" id="detail-link" class="btn btn-sm btn-outline-secondary d-none" target="_blank">Открыть детально</a>
       </div>
-  <div class="card-body p-0" id="preview-pane">
-         <div id="preview-skeleton" class="skeleton"></div>
-         <iframe id="preview-iframe" src="about:blank" style="width: 100%; height: 100%; border: none; background:#fff; display:block;"></iframe>
+      <div class="card-body p-0" id="preview-pane">
+        <div id="preview-skeleton" class="skeleton"></div>
+        <iframe id="preview-iframe" src="about:blank" style="width: 100%; height: 100%; border: none; background:#fff; display:block;"></iframe>
       </div>
     </div>
   </div>
 </div>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const fileList = document.getElementById('file-list');
-    const previewIframe = document.getElementById('preview-iframe');
-    const detailLink = document.getElementById('detail-link');
-    const previewFileInput = document.getElementById('preview_file_input');
-    const previewSkeleton = document.getElementById('preview-skeleton');
-    const fileCountEl = document.getElementById('file-count');
-    let activeItem = null;
-
-    // Function to activate an item and load preview
-    function activateItem(item) {
-        if (activeItem) {
-            activeItem.classList.remove('active');
-        }
-        activeItem = item;
-        activeItem.classList.add('active');
-
-  const previewUrl = item.getAttribute('href');
-  // append embedded=1 to request minimal preview suitable for iframe
-  const sep = previewUrl.includes('?') ? '&' : '?';
-  const previewUrlEmbedded = previewUrl + sep + 'embedded=1';
-        const detailUrl = item.getAttribute('data-detail-url');
-        const fileId = item.getAttribute('data-file-id');
-
-  if (previewSkeleton) previewSkeleton.classList.remove('hidden');
-  previewIframe.src = previewUrlEmbedded;
-        
-        if (detailUrl) {
-            detailLink.href = detailUrl;
-            detailLink.classList.remove('d-none');
-        } else {
-            detailLink.classList.add('d-none');
-        }
-        
-        // Update hidden input for filters
-        if (previewFileInput) {
-            previewFileInput.value = fileId;
-        }
-    }
-
-    fileList.addEventListener('click', function(e) {
-        // handle refresh click
-        const refBtn = e.target.closest('button.refresh-btn');
-        if (refBtn) {
-            e.preventDefault(); e.stopPropagation();
-            const id = refBtn.getAttribute('data-id');
-            if (!id) return;
-            const prev = refBtn.textContent;
-            refBtn.disabled = true; refBtn.textContent = '⏳';
-            fetch(`/api/files/${id}/refresh`, { method: 'POST' })
-              .then(r => r.json())
-              .then(data => {
-                  if (!data || !data.ok) throw new Error(data && data.error || 'failed');
-                  // if this item is active, reload preview iframe
-                  const item = refBtn.closest('a.list-group-item-action');
-                  const wasActive = item && item.classList.contains('active');
-                  if (wasActive) {
-                    const iframe = document.getElementById('preview-iframe');
-                    if (iframe && iframe.src && iframe.src !== 'about:blank') {
-                      try {
-                        const url = new URL(iframe.src);
-                        url.searchParams.set('ts', String(Date.now()));
-                        iframe.src = url.toString();
-                      } catch(_) { iframe.src = iframe.src; }
-                    }
-                  }
-                  // update title/author/year text in list item
-                  try {
-                    const f = data.file || {};
-                    const h6 = item.querySelector('h6'); if (h6) h6.textContent = f.title || f.filename || h6.textContent;
-                    const p = item.querySelector('p'); if (p) p.textContent = f.author || '';
-                    const yearBadge = item.querySelector('span.type-badge[title="Год"]');
-                    if (yearBadge) { if (f.year) yearBadge.textContent = f.year; else yearBadge.remove(); }
-                  } catch(_) {}
-                  refBtn.textContent = '✓';
-                  setTimeout(()=>{ refBtn.textContent = prev; refBtn.disabled = false; }, 800);
-              })
-              .catch(() => { refBtn.textContent = prev; refBtn.disabled = false; alert('Не удалось обновить'); });
-            return;
-        }
-        // handle delete click
-        const delBtn = e.target.closest('button.delete-btn');
-        if (delBtn) {
-            e.preventDefault(); e.stopPropagation();
-            const id = delBtn.getAttribute('data-id');
-            if (!id) return;
-            if (!confirm('Удалить запись и убрать из списка?')) return;
-            fetch(`/api/files/${id}`, { method: 'DELETE' }).then(r=>{
-                if (r.ok) {
-                    const item = delBtn.closest('a.list-group-item-action');
-                    if (!item) return;
-                    const wasActive = (item === activeItem);
-                    item.remove();
-                    // update count text if present
-                    try{
-                        const m = fileCountEl && fileCountEl.textContent.match(/\d+/);
-                        if (m) { const n = Math.max(0, (parseInt(m[0],10)||0) - 1); fileCountEl.textContent = `${n} записей`; }
-                    }catch(e){}
-                    if (wasActive) {
-                        // pick next item or clear preview
-                        const next = fileList.querySelector('a.list-group-item-action');
-                        if (next) activateItem(next);
-                        else {
-                            previewIframe.src = 'about:blank';
-                            detailLink.classList.add('d-none');
-                            if (previewSkeleton) previewSkeleton.classList.add('hidden');
-                        }
-                    }
-                } else {
-                    alert('Не удалось удалить запись');
-                }
-            }).catch(()=> alert('Ошибка сети при удалении'));
-            return;
-        }
-
-        const targetItem = e.target.closest('a.list-group-item-action');
-        if (targetItem) {
-            e.preventDefault();
-            activateItem(targetItem);
-            // Update URL without reloading
-            const newUrl = new URL(window.location);
-            newUrl.searchParams.set('preview_file', targetItem.getAttribute('data-file-id'));
-            window.history.replaceState({path: newUrl.href}, '', newUrl.href);
-        }
-    });
-
-    // Hide skeleton when iframe finishes loading
-    previewIframe.addEventListener('load', function() {
-      if (previewSkeleton) previewSkeleton.classList.add('hidden');
-    });
-
-    // Keyboard navigation: Up/Down to move, Enter to open details
-    window.addEventListener('keydown', function(e) {
-      if (!fileList) return;
-      if (['ArrowDown','ArrowUp','Enter'].includes(e.key)) e.preventDefault();
-      if (e.key === 'ArrowDown') {
-        const items = Array.from(fileList.querySelectorAll('a.list-group-item-action'));
-        if (!items.length) return;
-        const idx = items.indexOf(activeItem);
-        const next = items[Math.min(items.length - 1, Math.max(0, idx + 1))] || items[0];
-        if (next && next !== activeItem) {
-          activateItem(next);
-          next.scrollIntoView({ block: 'nearest' });
-        }
-      } else if (e.key === 'ArrowUp') {
-        const items = Array.from(fileList.querySelectorAll('a.list-group-item-action'));
-        if (!items.length) return;
-        const idx = items.indexOf(activeItem);
-        const prev = items[Math.max(0, idx - 1)] || items[0];
-        if (prev && prev !== activeItem) {
-          activateItem(prev);
-          prev.scrollIntoView({ block: 'nearest' });
-        }
-      } else if (e.key === 'Enter') {
-        if (detailLink && !detailLink.classList.contains('d-none')) {
-          window.open(detailLink.href, '_blank');
-        }
-      }
-    });
-
-    // On page load, check if a file should be pre-selected
-    const urlParams = new URLSearchParams(window.location.search);
-    const fileToPreview = urlParams.get('preview_file');
-    if (fileToPreview) {
-        const itemToActivate = fileList.querySelector(`[data-file-id="${fileToPreview}"]`);
-        if (itemToActivate) {
-            activateItem(itemToActivate);
-            itemToActivate.scrollIntoView({ block: 'center' });
-        }
-    } else {
-        // If no file is selected, load the first one if it exists
-  const firstItem = fileList.querySelector('a.list-group-item-action');
-        if (firstItem) {
-            activateItem(firstItem);
-        }
-    }
-});
-</script>
-
-<!-- Модальное окно подтверждения удаления -->
+<!-- Модал удаления файла -->
 <div id="delete-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.35); display:none; align-items:center; justify-content:center; z-index:3000;">
   <div class="card" style="width: 420px; max-width: 92%;">
     <div class="card-body">
-      <h6 class="card-title mb-2">Удалить запись</h6>
+      <h6 class="card-title mb-2">Удалить файл</h6>
       <div class="text-muted mb-2" id="del-filename"></div>
       <div class="form-check mb-2">
         <input class="form-check-input" type="checkbox" id="del-fs">
-        <label class="form-check-label" for="del-fs">Удалить файл с диска</label>
+        <label class="form-check-label" for="del-fs">Удалить с диска</label>
       </div>
       <div class="d-flex" style="gap:.5rem; justify-content:flex-end;">
         <button class="btn btn-outline-secondary btn-sm" id="del-cancel" type="button">Отмена</button>
@@ -373,263 +162,289 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div>
   </div>
-</div>
-
-<script>
-// Deletion modal logic with optional filesystem removal
-document.addEventListener('DOMContentLoaded', ()=>{
-  const modal = document.getElementById('delete-modal');
-  const nameEl = document.getElementById('del-filename');
-  const fsCb = document.getElementById('del-fs');
-  const btnCancel = document.getElementById('del-cancel');
-  const btnConfirm = document.getElementById('del-confirm');
-  const fileList = document.getElementById('file-list');
-  const fileCountEl = document.getElementById('file-count');
-  let target = { id:null, item:null };
-
-  function openDel(item){
-    target.item = item;
-    target.id = item.getAttribute('data-file-id');
-    const title = item.querySelector('h6')?.textContent || '';
-    nameEl.textContent = title;
-    fsCb.checked = false;
-    modal.style.display = 'flex';
-  }
-  function closeDel(){ modal.style.display = 'none'; target = {id:null,item:null}; }
-
-  fileList.addEventListener('click', function(e){
-    const delBtn = e.target.closest('button.delete-btn');
-    if (delBtn){
-      e.preventDefault(); e.stopPropagation();
-      const li = delBtn.closest('a.list-group-item-action');
-      if (li) openDel(li);
-    }
-  });
-  btnCancel.addEventListener('click', closeDel);
-  modal.addEventListener('click', (e)=>{ if (e.target === modal) closeDel(); });
-  btnConfirm.addEventListener('click', ()=>{
-    if (!target.id || !target.item) return;
-    const rm = fsCb.checked ? '?rm=1' : '';
-    fetch(`/api/files/${target.id}${rm}`, { method: 'DELETE' }).then(r=>{
-      if (r.ok){
-        const wasActive = target.item.classList.contains('active');
-        target.item.remove();
-        try{
-          const m = fileCountEl && fileCountEl.textContent.match(/\d+/);
-          if (m) { const n = Math.max(0, (parseInt(m[0],10)||0) - 1); fileCountEl.textContent = `${n} записей`; }
-        }catch(e){}
-        if (wasActive){
-          const next = fileList.querySelector('a.list-group-item-action');
-          if (next){
-            next.click();
-          } else {
-            const iframe = document.getElementById('preview-iframe');
-            const detailLink = document.getElementById('detail-link');
-            if (iframe) iframe.src = 'about:blank';
-            if (detailLink) detailLink.classList.add('d-none');
-          }
-        }
-        closeDel();
-      } else { alert('Не удалось удалить запись'); }
-    }).catch(()=> alert('Ошибка сети при удалении'));
-  });
-});
-</script>
-
-<script>
-// Быстрый импорт на главной: работает офлайн, XHR с прогрессом
-document.addEventListener('DOMContentLoaded', ()=>{
-  const dz = document.getElementById('quick-dropzone');
-  const fileInput = document.getElementById('quick-file');
-  const quickScan = document.getElementById('quick-scan');
-  const prog = document.getElementById('quick-progress');
-  const bar = document.getElementById('quick-bar');
-  if (!dz) return;
-
-  function uploadFiles(files){
-    if (!files || !files.length) return;
-    const fd = new FormData();
-    for (const f of files){ const rp = f.webkitRelativePath || f.name; fd.append('files', f, rp); }
-    if (quickScan.checked) fd.append('start_scan','on');
-    fd.append('extract_text','on');
-    fd.append('prune','on');
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '{{ url_for('import_files') }}');
-    prog.classList.remove('d-none');
-    bar.style.width = '0%';
-    xhr.upload.onprogress = (e)=>{ if (e.lengthComputable){ bar.style.width = Math.round(e.loaded/e.total*100) + '%'; } };
-    xhr.onload = ()=>{ if (xhr.status>=200 && xhr.status<400){ window.location = quickScan.checked ? '{{ url_for('settings') }}' : '{{ url_for('index') }}'; } else { alert('Ошибка импорта'); } };
-    xhr.onerror = ()=> alert('Сбой сети при импорте');
-    xhr.send(fd);
-  }
-
-  dz.addEventListener('click', ()=> fileInput.click());
-  dz.addEventListener('dragover', (e)=>{ e.preventDefault(); dz.style.background='var(--muted-bg)'; });
-  dz.addEventListener('dragleave', ()=>{ dz.style.background=''; });
-  dz.addEventListener('drop', (e)=>{
-    e.preventDefault(); dz.style.background='';
-    const items = e.dataTransfer.items;
-    if (items && items.length && items[0].webkitGetAsEntry){
-      const tasks=[]; const accum=[];
-      function traverse(en, base){
-        return new Promise((resolve)=>{
-          if (en.isFile){ en.file(f=>{ f.relativePath = (base? base+'/' : '') + f.name; accum.push(f); resolve(); }); }
-          else if (en.isDirectory){ const rd=en.createReader(); rd.readEntries(ents=>{ Promise.all(ents.map(ch=>traverse(ch, (base? base+'/' : '')+en.name))).then(resolve); }); }
-          else resolve();
-        });
-      }
-      for (const it of items){ const en = it.webkitGetAsEntry(); if (en) tasks.push(traverse(en, '')); }
-      Promise.all(tasks).then(()=> uploadFiles(accum));
-    } else {
-      uploadFiles(e.dataTransfer.files);
-    }
-  });
-  fileInput.addEventListener('change', ()=> uploadFiles(fileInput.files));
-});
-</script>
-
-<!-- Модальное окно прогресса сканирования -->
-<div id="scan-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.35); display:none; align-items:center; justify-content:center; z-index:2000;">
-  <div class="card" style="width: 520px; max-width: 92%;">
-    <div class="card-body">
-      <h6 class="card-title mb-2">Сканирование библиотеки</h6>
-      <div class="tabs d-flex mb-2" style="gap:.5rem;">
-        <button class="btn btn-outline-secondary btn-sm tab active" data-tab="status">Статус</button>
-        <button class="btn btn-outline-secondary btn-sm tab" data-tab="log">Лог</button>
-      </div>
-      <div id="scan-pane-status">
-        <div class="mb-2 text-muted" id="scan-stage">Готово к запуску…</div>
-        <div class="progress" style="height:10px; background: var(--muted-bg); border-radius:6px; overflow:hidden;">
-          <div id="scan-bar" style="height:100%; width:0%; background: var(--accent);"></div>
-        </div>
-        <div class="d-flex mt-2" style="gap:.5rem; align-items:center;">
-          <div id="scan-stats" class="text-muted">0 / 0</div>
-          <div id="scan-eta" class="text-muted ms-2"></div>
-          <div class="ms-auto">
-            <button class="btn btn-outline-secondary btn-sm" id="scan-cancel-btn" type="button">Отменить</button>
-            <button class="btn btn-primary btn-sm d-none" id="scan-close-btn" type="button">Закрыть</button>
-          </div>
-        </div>
-      </div>
-      <div id="scan-pane-log" class="d-none">
-        <div id="scan-log" style="max-height: 240px; overflow:auto; background: var(--muted-bg); padding:.5rem; border-radius:6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;"></div>
-      </div>
-    </div>
   </div>
-  <style>
-    .progress { box-shadow: 0 0 0 1px rgba(0,0,0,0.06) inset; }
-  </style>
-</div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function(){
-  const form = document.getElementById('scan-form');
-  const startBtn = document.getElementById('scan-start-btn');
-  const modal = document.getElementById('scan-modal');
-  const bar = document.getElementById('scan-bar');
-  const stats = document.getElementById('scan-stats');
-  const eta = document.getElementById('scan-eta');
-  const stage = document.getElementById('scan-stage');
-  const cancelBtn = document.getElementById('scan-cancel-btn');
-  const closeBtn = document.getElementById('scan-close-btn');
-  const tabs = document.querySelectorAll('#scan-modal .tab');
-  const paneStatus = document.getElementById('scan-pane-status');
-  const paneLog = document.getElementById('scan-pane-log');
-  const logView = document.getElementById('scan-log');
-  let pollTimer = null;
+document.addEventListener('DOMContentLoaded', function() {
+  const fileList = document.getElementById('file-list');
+  const previewIframe = document.getElementById('preview-iframe');
+  const detailLink = document.getElementById('detail-link');
+  const previewFileInput = document.getElementById('preview_file_input');
+  const previewSkeleton = document.getElementById('preview-skeleton');
+  const fileCountEl = document.getElementById('file-count');
+  const aiInput = document.getElementById('ai-input');
+  const aiBtn = document.getElementById('ai-search-btn');
+  const aiStatus = document.getElementById('ai-status');
+  let activeItem = null;
+  // Deletion modal elements
+  const delModal = document.getElementById('delete-modal');
+  const delName = document.getElementById('del-filename');
+  const delFs = document.getElementById('del-fs');
+  const delCancel = document.getElementById('del-cancel');
+  const delConfirm = document.getElementById('del-confirm');
+  let delId = null;
 
-  function showModal() { modal.style.display = 'flex'; }
-  function hideModal() { modal.style.display = 'none'; }
-  function setBar(p){ bar.style.width = Math.max(0, Math.min(100, p)) + '%'; }
+  function showDel(id, name){ delId = id; if(delName) delName.textContent = name || ''; if(delModal) delModal.style.display='flex'; }
+  function hideDel(){ delId = null; if(delModal) delModal.style.display='none'; }
 
-  async function pollStatusOnce(){
-    const r = await fetch('{{ url_for('scan_status') }}');
-    const s = await r.json();
-    const total = s.total || 0; const done = s.processed || 0;
-    const pct = total ? Math.round(done/total*100) : (s.running ? 5 : 0);
-    setBar(pct);
-    stats.textContent = `${done} / ${total} — добавлено ${s.added||0}, обновлено ${s.updated||0}, удалено ${s.removed||0}`;
-    if (s.eta_seconds) {
-      const m = Math.floor(s.eta_seconds/60), sec = s.eta_seconds%60;
-      eta.textContent = `≈ осталось ${m}м ${sec}с`;
-    } else { eta.textContent = ''; }
-    let stLabel = s.stage;
-    if (s.stage === 'counting') stLabel = 'Подготовка…';
-    else if (s.stage === 'processing') stLabel = `Обработка: ${s.current||''}`;
-    else if (s.stage === 'llm') stLabel = 'Извлечение метаданных (LLM)…';
-    else if (s.stage === 'prune') stLabel = 'Удаление отсутствующих…';
-    else if (s.stage === 'done') stLabel = 'Готово';
-    else if (s.stage === 'error') stLabel = 'Ошибка';
-    stage.textContent = stLabel;
-    if (s.error) stage.textContent += `: ${s.error}`;
-    if (s.history && Array.isArray(s.history)){
-      logView.innerHTML = s.history.map(h=>{
-        const d = new Date(h.t*1000); const ts = d.toLocaleTimeString();
-        const lvl = (h.level||'info').toUpperCase();
-        return `<div><span class="text-muted">[${ts}]</span> <b>${lvl}</b> ${h.msg}</div>`;
-      }).join('');
-      // авто-скролл вниз
-      logView.scrollTop = logView.scrollHeight;
-    }
-    if (!s.running && (s.stage === 'done' || s.stage === 'error')){
-      clearInterval(pollTimer); pollTimer = null;
-      cancelBtn.classList.add('d-none');
-      closeBtn.classList.remove('d-none');
-    }
+  function setStatus(msg){ if (aiStatus) aiStatus.textContent = msg || ''; }
+
+  // Activate and load preview
+  function activateItem(item) {
+    if (activeItem) activeItem.classList.remove('active');
+    activeItem = item;
+    activeItem.classList.add('active');
+    const previewUrl = item.getAttribute('href');
+    const sep = previewUrl.includes('?') ? '&' : '?';
+    const previewUrlEmbedded = previewUrl + sep + 'embedded=1';
+    const detailUrl = item.getAttribute('data-detail-url');
+    const fileId = item.getAttribute('data-file-id');
+    if (previewSkeleton) previewSkeleton.classList.remove('hidden');
+    previewIframe.src = previewUrlEmbedded;
+    if (detailUrl) { detailLink.href = detailUrl; detailLink.classList.remove('d-none'); }
+    else { detailLink.classList.add('d-none'); }
+    if (previewFileInput) previewFileInput.value = fileId;
   }
 
-  function startPolling(){
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(pollStatusOnce, 600);
-    pollStatusOnce();
+  // Clicks in list
+  fileList.addEventListener('click', function(e) {
+    const rnBtn = e.target.closest('button.rename-btn');
+    if (rnBtn) {
+      e.preventDefault(); e.stopPropagation();
+      const id = rnBtn.getAttribute('data-id'); if (!id) return;
+      rnBtn.disabled = true; const prev = rnBtn.textContent; rnBtn.textContent = '…';
+      fetch(`/api/files/${id}/rename-suggest`).then(r=>r.json()).then(sug=>{
+        rnBtn.textContent = prev; rnBtn.disabled = false;
+        if (!sug || !sug.ok) { alert('Не удалось получить предложение имени'); return; }
+        const base = prompt('Базовое имя (можно поправить):', sug.suggested || '');
+        if (base === null) return;
+        fetch(`/api/files/${id}/rename`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ base }) })
+          .then(r=>r.json()).then(ans=>{
+            if (!ans || !ans.ok) { alert('Ошибка переименования: ' + (ans && ans.error || '')); return; }
+            const item = rnBtn.closest('a.list-group-item-action');
+            const p = item && item.querySelector('small.text-muted');
+            if (p && ans.rel_path) p.textContent = ans.rel_path;
+            if (item && ans.rel_path) item.setAttribute('href', '/preview/' + String(ans.rel_path).replace(/\\\\/g,'/'));
+            const h = item && item.querySelector('h6'); if (h && base) h.textContent = base;
+            if (item && item.classList.contains('active')){
+              const iframe = document.getElementById('preview-iframe');
+              if (iframe) { iframe.src = 'about:blank'; setTimeout(()=>{ item.click(); }, 50); }
+            }
+          });
+      }).catch(()=>{ rnBtn.textContent = prev; rnBtn.disabled = false; alert('Сбой сети'); });
+      return;
+    }
+
+    const refBtn = e.target.closest('button.refresh-btn');
+    if (refBtn) {
+      e.preventDefault(); e.stopPropagation();
+      const id = refBtn.getAttribute('data-id'); if (!id) return;
+      const prev = refBtn.textContent; refBtn.disabled = true; refBtn.textContent = '…';
+      fetch(`/api/files/${id}/refresh`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data.ok) throw new Error(data && data.error || 'failed');
+          const item = refBtn.closest('a.list-group-item-action');
+          const wasActive = item && item.classList.contains('active');
+          if (wasActive) {
+            const iframe = document.getElementById('preview-iframe');
+            if (iframe && iframe.src && iframe.src !== 'about:blank') {
+              try { const url = new URL(iframe.src); url.searchParams.set('ts', String(Date.now())); iframe.src = url.toString(); }
+              catch(_) { iframe.src = iframe.src; }
+            }
+          }
+          const f = data.file || {};
+          const h6 = item.querySelector('h6'); if (h6) h6.textContent = f.title || f.filename || h6.textContent;
+          const p = item.querySelector('p'); if (p) p.textContent = f.author || '';
+          const yearBadge = item.querySelector('span.type-badge[title="Год"]');
+          if (yearBadge) { if (f.year) yearBadge.textContent = f.year; else yearBadge.remove(); }
+          refBtn.textContent = '↻'; setTimeout(()=>{ refBtn.disabled = false; }, 400);
+        })
+        .catch(() => { refBtn.textContent = prev; refBtn.disabled = false; alert('Ошибка обновления'); });
+      return;
+    }
+    // handle delete click
+    const delBtn = e.target.closest('button.delete-btn');
+    if (delBtn) {
+      e.preventDefault(); e.stopPropagation();
+      const id = delBtn.getAttribute('data-id'); if (!id) return;
+      const item = delBtn.closest('a.list-group-item-action');
+      const title = item?.querySelector('h6')?.textContent || '';
+      showDel(id, title);
+      return;
+    }
+
+    const targetItem = e.target.closest('a.list-group-item-action');
+    if (targetItem) { e.preventDefault(); activateItem(targetItem); }
+  });
+
+  previewIframe.addEventListener('load', function() { if (previewSkeleton) previewSkeleton.classList.add('hidden'); });
+
+  // Preselect file
+  const urlParams = new URLSearchParams(window.location.search);
+  const fileToPreview = urlParams.get('preview_file');
+  if (fileToPreview) {
+    const itemToActivate = fileList.querySelector(`[data-file-id="${fileToPreview}"]`);
+    if (itemToActivate) { activateItem(itemToActivate); itemToActivate.scrollIntoView({ block: 'center' }); }
+  } else {
+    const firstItem = fileList.querySelector('a.list-group-item-action');
+    if (firstItem) activateItem(firstItem);
   }
 
-  startBtn?.addEventListener('click', async ()=>{
-    const fd = new FormData(form);
-    try{
-      const r = await fetch('{{ url_for('scan_start') }}', { method: 'POST', body: fd });
-      if (r.ok) { showModal(); cancelBtn.classList.remove('d-none'); closeBtn.classList.add('d-none'); setBar(0); startPolling(); }
-      else if (r.status === 409) { showModal(); stage.textContent = 'Сканирование уже выполняется…'; startPolling(); }
-      else { alert('Не удалось запустить сканирование'); }
-    } catch(e){ alert('Ошибка запуска: ' + e); }
-  });
-
-  cancelBtn?.addEventListener('click', async ()=>{
-    cancelBtn.disabled = true;
-    await fetch('{{ url_for('scan_cancel') }}', { method: 'POST' });
-  });
-
-  closeBtn?.addEventListener('click', ()=>{ hideModal(); window.location.reload(); });
-
-  // Табы в модалке
-  tabs.forEach(b=>{
-    b.addEventListener('click', ()=>{
-      tabs.forEach(x=>x.classList.remove('active'));
-      b.classList.add('active');
-      const tab = b.dataset.tab;
-      paneStatus.classList.toggle('d-none', tab !== 'status');
-      paneLog.classList.toggle('d-none', tab !== 'log');
-      try { localStorage.setItem('scan_modal_tab', tab); } catch(e){}
-    });
-  });
-
-  // Автоподхват состояния при перезагрузке
-  (async ()=>{
-    try{
-      const r = await fetch('{{ url_for('scan_status') }}');
-      if (!r.ok) return;
-      const s = await r.json();
-      // восстановить выбранную вкладку
-      const savedTab = (localStorage.getItem('scan_modal_tab') || 'status');
-      tabs.forEach(x=>x.classList.toggle('active', x.dataset.tab === savedTab));
-      paneStatus.classList.toggle('d-none', savedTab !== 'status');
-      paneLog.classList.toggle('d-none', savedTab !== 'log');
-
-      if (s.running || ['counting','processing','llm','prune'].includes(s.stage)){
-        showModal(); cancelBtn.classList.remove('d-none'); closeBtn.classList.add('d-none'); startPolling();
+  // AI search
+  function ensureAiCard(){
+    let card = document.getElementById('ai-result-card');
+    if (card) return card;
+    const center = document.querySelector('.center-col');
+    if (!center) return null;
+    card = document.createElement('div');
+    card.id = 'ai-result-card';
+    card.className = 'card mb-2';
+    card.innerHTML = '<div class="card-header fw-semibold">Ответ ИИ</div>'+
+                     '<div class="card-body">'+
+                     '<div id="ai-answer" class="mb-2"></div>'+
+                     '<div id="ai-sources"></div>'+
+                     '</div>';
+    const anchor = center.querySelector('#file-list');
+    center.insertBefore(card, anchor);
+    return card;
+  }
+  function openAiSource(fileId, relPath, mark){
+    try {
+      const item = fileList?.querySelector(`[data-file-id="${fileId}"]`);
+      if (item) {
+        activateItem(item);
+        const iframe = document.getElementById('preview-iframe');
+        if (iframe && iframe.src) {
+          try{ const u = new URL(iframe.src); u.searchParams.set('mark', String(mark||'')); u.searchParams.set('ts', String(Date.now())); iframe.src = u.toString(); }catch(_){ }
+        }
+      } else if (relPath) {
+        const url = `/preview/${String(relPath).replace(/\\\\/g,'/')}`;
+        const sep = url.includes('?') ? '&' : '?';
+        previewIframe.src = url + sep + `embedded=1&mark=${encodeURIComponent(mark||'')}`;
+        if (detailLink && fileId) { detailLink.href = `/file/${fileId}`; detailLink.classList.remove('d-none'); }
       }
-    }catch(e){ /* ignore */ }
-  })();
+    } catch(e){}
+  }
+  async function doAiSearch(){
+    const q = (aiInput?.value || '').trim();
+    if (!q) { setStatus('Введите вопрос.'); return; }
+    if (aiBtn) { aiBtn.disabled = true; aiBtn.textContent = 'Ищу...'; }
+    // Collapse/clear previous AI card while loading
+    const existed = document.getElementById('ai-result-card');
+    if (existed) {
+      existed.style.display = 'none';
+      const ans = existed.querySelector('#ai-answer'); if (ans) ans.textContent='';
+      const src = existed.querySelector('#ai-sources'); if (src) src.innerHTML='';
+    }
+    setStatus('Формирую ответ и подбираю источники...');
+    try{
+      const r = await fetch('/api/ai-search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query: q, top_k: 20, sources:{ tags:true, text:true } })});
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const aiCard = ensureAiCard();
+      const aiAnswer = document.getElementById('ai-answer');
+      const aiSources = document.getElementById('ai-sources');
+      const items = Array.isArray(data.items)? data.items: [];
+      const mark = (data.keywords||[]).slice(0,3).join(' ');
+      // Only show the card if we have something meaningful
+      const shouldShow = (items && items.length) || (data.answer && String(data.answer).trim().length);
+      if (!shouldShow) { if (aiCard) aiCard.remove(); setStatus('Ничего не найдено'); return; }
+      if (aiCard) aiCard.style.display = '';
+      if (aiSources) {
+        aiSources.innerHTML = items.map((it, idx)=>{
+          const title = it.title || it.rel_path || ('Файл #' + it.file_id);
+          const snip = (it.snippets && it.snippets[0]) ? it.snippets[0] : '';
+          return `<div class="mb-2">
+            <a href="#" class="ai-source" data-idx="${idx+1}" data-file-id="${it.file_id}" data-rel-path="${(it.rel_path||'').replace(/\"/g,'&quot;')}" data-mark="${mark.replace(/\"/g,'&quot;')}"><strong>[${idx+1}] ${title}</strong></a>
+            ${snip ? `<div class="text-muted small mt-1">${snip}</div>` : ''}
+          </div>`;
+        }).join('');
+        // Click handling for sources
+        aiSources.onclick = (e)=>{
+          const a = e.target.closest('a.ai-source');
+          if (!a) return;
+          e.preventDefault();
+          openAiSource(a.getAttribute('data-file-id'), a.getAttribute('data-rel-path'), a.getAttribute('data-mark'));
+        };
+      }
+      if (aiAnswer) {
+        const raw = (data.answer||'').trim() || 'Ответ сформирован по найденным источникам ниже.';
+        // Linkify references like [1], [2]
+        const withLinks = raw.replace(/\[(\d{1,2})\]/g, (m, p1)=>{
+          const n = parseInt(p1,10);
+          if (!n || n < 1 || n > items.length) return m;
+          const it = items[n-1] || {};
+          const rp = String(it.rel_path||'').replace(/\"/g,'&quot;');
+          return `<a href="#" class="ai-ref" data-idx="${n}" data-file-id="${it.file_id}" data-rel-path="${rp}" data-mark="${mark.replace(/\"/g,'&quot;')}">[${n}]</a>`;
+        });
+        aiAnswer.innerHTML = withLinks;
+        // Clicks on [n]
+        aiAnswer.onclick = (e)=>{
+          const a = e.target.closest('a.ai-ref');
+          if (!a) return;
+          e.preventDefault();
+          openAiSource(a.getAttribute('data-file-id'), a.getAttribute('data-rel-path'), a.getAttribute('data-mark'));
+        };
+      }
+      setStatus('Готово');
+    }catch(e){
+      const aiCard = ensureAiCard(); if (aiCard) aiCard.classList.remove('d-none');
+      const aiSources = document.getElementById('ai-sources'); if (aiSources) aiSources.innerHTML = `<div class="text-danger">Ошибка: ${String(e)}</div>`;
+      setStatus('Не удалось выполнить ИИ‑поиск');
+    } finally {
+      if (aiBtn) { aiBtn.disabled = false; aiBtn.textContent = 'Найти ИИ'; }
+    }
+  }
+  aiBtn?.addEventListener('click', doAiSearch);
+  aiInput?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') { e.preventDefault(); doAiSearch(); } });
+
+  // Deletion modal handlers
+  delCancel?.addEventListener('click', hideDel);
+  delConfirm?.addEventListener('click', async ()=>{
+    if (!delId) return;
+    const removeFs = delFs?.checked ? '1' : '0';
+    try{
+      const r = await fetch(`/api/files/${delId}?rm=${removeFs}`, { method:'DELETE' });
+      const ok = r.ok;
+      hideDel();
+      if (!ok) { alert('Не удалось удалить файл'); return; }
+      // Remove from list and update counter
+      const a = fileList.querySelector(`a.list-group-item-action [data-id="${delId}"]`)?.closest('a.list-group-item-action')
+               || fileList.querySelector(`a.list-group-item-action[data-file-id="${delId}"]`);
+      if (a) { const wasActive = a.classList.contains('active'); a.remove();
+        // update count
+        const cnt = fileList.querySelectorAll('a.list-group-item-action').length;
+        if (fileCountEl) fileCountEl.textContent = `${cnt} результатов`;
+        // activate next item if removed active
+        if (wasActive) {
+          const next = fileList.querySelector('a.list-group-item-action');
+          if (next) activateItem(next); else { previewIframe.src='about:blank'; detailLink.classList.add('d-none'); }
+        }
+      }
+    }catch(e){ hideDel(); alert('Ошибка сети при удалении'); }
+  });
+
+  // Keyboard navigation
+  window.addEventListener('keydown', function(e) {
+    if (!fileList) return;
+    if (['ArrowDown','ArrowUp','Enter'].includes(e.key)) e.preventDefault();
+    if (e.key === 'ArrowDown') {
+      const items = Array.from(fileList.querySelectorAll('a.list-group-item-action'));
+      if (!items.length) return;
+      const idx = items.indexOf(activeItem);
+      const next = items[Math.min(items.length - 1, Math.max(0, idx + 1))] || items[0];
+      if (next && next !== activeItem) { activateItem(next); next.scrollIntoView({ block: 'nearest' }); }
+    } else if (e.key === 'ArrowUp') {
+      const items = Array.from(fileList.querySelectorAll('a.list-group-item-action'));
+      if (!items.length) return;
+      const idx = items.indexOf(activeItem);
+      const prev = items[Math.max(0, idx - 1)] || items[0];
+      if (prev && prev !== activeItem) { activateItem(prev); prev.scrollIntoView({ block: 'nearest' }); }
+    } else if (e.key === 'Enter') {
+      if (detailLink && !detailLink.classList.contains('d-none')) { window.open(detailLink.href, '_blank'); }
+    }
+  });
 });
 </script>
 {% endblock %}

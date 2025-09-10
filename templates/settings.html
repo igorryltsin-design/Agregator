@@ -3,6 +3,16 @@
 <form method="post" class="card">
   <div class="card-body">
     <h5 class="card-title">Настройки</h5>
+    <div id="settings-tabs" class="tabs d-flex mb-2" style="gap:.5rem; flex-wrap:wrap;">
+      <button type="button" class="btn btn-outline-secondary btn-sm stab active" data-tab="main">Основные</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm stab" data-tab="audio">Аудио</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm stab" data-tab="llm">LLM</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm stab" data-tab="rename">Переименование</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm stab" data-tab="prompts">Промпты</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm stab" data-tab="advanced">Дополнительно</button>
+    </div>
+
+    <div id="pane-main" class="settings-pane settings-main" data-pane="main">
     <div class="mb-3">
       <label class="form-label">Корневая папка для сканирования</label>
       <input class="form-control" name="scan_root" value="{{ scan_root }}">
@@ -12,6 +22,9 @@
       <input class="form-check-input" type="checkbox" id="ex" name="extract_text" {% if extract_text %}checked{% endif %}>
       <label class="form-check-label" for="ex">Извлекать текст из PDF</label>
     </div>
+    </div>
+
+    <div id="pane-audio" class="settings-pane settings-audio d-none" data-pane="audio">
     <h6 class="mt-3">Аудио (оффлайн транскрибация)</h6>
     <div class="row g-3 mb-2">
       <div class="col-md-4">
@@ -46,6 +59,86 @@
       <input class="form-check-input" type="checkbox" id="kws_audio" name="audio_keywords_llm" {% if audio_keywords_llm %}checked{% endif %}>
       <label class="form-check-label" for="kws_audio">Ключевые слова из стенограммы (LLM)</label>
     </div>
+    </div>
+    <div id="pane-llm" class="settings-pane settings-llm d-none" data-pane="llm">
+      <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" id="vision_img" name="vision_images" {% if vision_images %}checked{% endif %}>
+        <label class="form-check-label" for="vision_img">Распознавание изображений (через LLM)</label>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-md-6">
+          <label class="form-label">Порядок определения типа</label>
+          <input class="form-control" name="type_detect_flow" value="{{ type_detect_flow }}">
+          <div class="form-text">Напр.: extension,heuristics,llm</div>
+        </div>
+        <div class="col-md-6">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="type_llm_override" name="type_llm_override" {% if type_llm_override %}checked{% endif %}>
+            <label class="form-check-label" for="type_llm_override">LLM может переопределять тип</label>
+          </div>
+        </div>
+      </div>
+      <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" id="kw_to_tags" name="kw_to_tags" {% if kw_to_tags %}checked{% endif %}>
+        <label class="form-check-label" for="kw_to_tags">Сохранять ключевые слова в теги</label>
+      </div>
+    </div>
+
+    <div id="pane-rename" class="settings-pane settings-rename d-none" data-pane="rename">
+      <div class="mb-3">
+        <label class="form-label">Шаблоны переименования</label>
+        <textarea class="form-control" name="rename_patterns" rows="8" placeholder="type=pattern, плейсхолдеры: {abbr} {degree} {title} {author_last} {year} {filename}">{% for k,v in rename_patterns.items() %}{{k}}={{v}}{% if not loop.last %}
+{% endif %}{% endfor %}</textarea>
+        <div class="form-text">Пример: dissertation={abbr}.{degree}.{title}.{author_last} • article=СТ.{title}.{author_last} • default={abbr}.{title}.{author_last}</div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Папка импорта (внутри корня)</label>
+          <input class="form-control" name="import_subdir" value="{{ import_subdir or 'import' }}" placeholder="import">
+          <div class="form-text">Новые загрузки попадают в эту подпапку внутри корня (например, Library/import).</div>
+        </div>
+        <div class="col-md-6 d-flex align-items-end">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="move_on_rename" name="move_on_rename" {% if move_on_rename %}checked{% endif %}>
+            <label class="form-check-label" for="move_on_rename">При переименовании переносить в подпапки по типам</label>
+          </div>
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Папки по типам (type=folder)</label>
+        <textarea class="form-control" name="type_dirs" rows="6" placeholder="article=articles&#10;textbook=textbooks&#10;audio=audio&#10;image=images">{% for k,v in type_dirs.items() %}{{k}}={{v}}{% if not loop.last %}
+{% endif %}{% endfor %}</textarea>
+        <div class="form-text">Пути относительно корня. Не используйте абсолютные пути. Неизвестные типы попадут в папку: {{ type_dirs.get('other','other') }}.</div>
+      </div>
+      <div class="mb-2">
+        <button type="button" class="btn btn-outline-primary" id="btn-move-all">Перенести все файлы по типам</button>
+        <div class="form-text">Запускает массовое перемещение всех файлов согласно текущему типу.</div>
+      </div>
+    </div>
+
+    <div id="pane-prompts" class="settings-pane settings-prompts d-none" data-pane="prompts">
+      <div class="mb-3">
+        <label class="form-label">Промпт метаданных</label>
+        <textarea class="form-control" name="prompt_metadata" rows="4">{{ prompt_metadata }}</textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Промпт суммаризации аудио</label>
+        <textarea class="form-control" name="prompt_audio_sum" rows="3">{{ prompt_audio_sum }}</textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Промпт для ключевых слов (аудио)</label>
+        <textarea class="form-control" name="prompt_keywords" rows="3">{{ prompt_keywords }}</textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Промпт для изображений (vision)</label>
+        <textarea class="form-control" name="prompt_vision" rows="3">{{ prompt_vision }}</textarea>
+      </div>
+    </div>
+
+    <div id="pane-advanced" class="settings-pane settings-advanced d-none" data-pane="advanced">
+      <div class="text-muted">Дополнительные настройки будут добавляться по мере необходимости.</div>
+    </div>
+    <div class="settings-pane settings-main d-none" data-pane="main">
     <div class="row g-3 mb-2">
       <div class="col-md-6">
         <label class="form-label">OCR языки</label>
@@ -90,11 +183,32 @@
         <input class="form-control" name="lm_key" value="{{ lm_key }}">
       </div>
     </div>
+    </div>
+    </div>
   </div>
   <div class="card-footer">
     <button class="btn btn-primary">Сохранить</button>
   </div>
 </form>
+
+<script>
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btn = document.getElementById('btn-move-all');
+  if (!btn) return;
+  btn.addEventListener('click', async ()=>{
+    if (!confirm('Перенести все файлы по их типам?')) return;
+    btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Перенос…';
+    try{
+      const r = await fetch('/api/files/move-by-type', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ all: true }) });
+      const j = await r.json().catch(()=>null);
+      const ok = j && j.ok; const moved = j && j.moved || 0; const skipped = j && j.skipped || 0; const errs = (j && j.errors || []).length;
+      alert((ok?'Готово: ':'Ошибка: ') + `перенесено ${moved}, пропущено ${skipped}, ошибок ${errs}`);
+      if (ok) location.reload();
+    }catch(e){ alert('Сбой сети'); }
+    finally{ btn.disabled = false; btn.textContent = prev; }
+  });
+});
+</script>
 
 <div class="card mt-3">
   <div class="card-body">
@@ -312,6 +426,24 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     }catch(e){ /* ignore */ }
   })();
+});
+</script>
+<script>
+// Вкладки настроек: показываем панели по data-pane
+document.addEventListener('DOMContentLoaded', ()=>{
+  const tabs = Array.from(document.querySelectorAll('.stab'));
+  const panes = Array.from(document.querySelectorAll('.settings-pane'));
+  function show(tab){
+    tabs.forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+    panes.forEach(p=>{
+      const ok = (p.dataset.pane === tab);
+      p.style.display = ok ? '' : 'none';
+      p.classList.toggle('d-none', !ok);
+    });
+    try{ localStorage.setItem('settings_tab', tab); }catch(e){}
+  }
+  tabs.forEach(t=> t.addEventListener('click', ()=> show(t.dataset.tab)));
+  show(localStorage.getItem('settings_tab') || 'main');
 });
 </script>
 <script>

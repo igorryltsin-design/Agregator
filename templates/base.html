@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Каталог научных материалов</title>
+  <title>Каталог</title>
   <link href="{{ url_for('static', filename='bootstrap.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='styles.css') }}" rel="stylesheet">
 </head>
@@ -21,12 +21,12 @@
         <li class="nav-item"><a class="nav-link" href="{{ url_for('import_files') }}">Импорт</a></li>
       </ul>
       <form class="nav-center d-flex search-form" role="search" action="{{ url_for('index') }}">
-          <input class="form-control me-2" type="search" name="q" placeholder="Поиск (названия, авторы, ключевые слова...)" value="{{ q or '' }}">
-          <button class="btn btn-outline-light" type="submit">Найти</button>
-        </form>
+        <input class="form-control me-2" type="search" name="q" placeholder="Поиск (названия, авторы, теги...)" value="{{ q or '' }}">
+        <button class="btn btn-outline-light" type="submit">Найти</button>
+      </form>
       <div class="nav-right d-flex align-items-center">
         <div class="nav-actions d-flex align-items-center">
-          <button id="themeToggle" type="button" title="Переключить тему" aria-label="Переключить тему">🌓</button>
+          <button id="themeToggle" type="button" title="Переключить тему" aria-label="Переключить тему">☀️</button>
           <a class="btn btn-success btn-sm" href="{{ url_for('settings') }}">Настройки</a>
         </div>
         <span class="author-mark ms-2">Made by Ryltsin I.A.</span>
@@ -40,17 +40,17 @@
 </main>
 
 <script>
-  // Применяем сохранённую тему из localStorage (переключатель также на странице настроек)
-  document.addEventListener('DOMContentLoaded', ()=>{
-    try{
-      const saved = localStorage.getItem('theme');
-      if(saved) document.documentElement.setAttribute('data-theme', saved);
-    }catch(e){ /* ignore */ }
-  });
+// Сохраняем выбранную тему в localStorage
+document.addEventListener('DOMContentLoaded', ()=>{
+  try{
+    const saved = localStorage.getItem('theme');
+    if(saved) document.documentElement.setAttribute('data-theme', saved);
+  }catch(e){ /* ignore */ }
+});
 </script>
 
 <script>
-// Быстрое переключение темы в навбаре
+// Переключение темы
 document.addEventListener('DOMContentLoaded', ()=>{
   const btn = document.getElementById('themeToggle');
   if(!btn) return;
@@ -66,147 +66,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
 </script>
 
 <script>
-// Сворачивание навбара без Bootstrap JS
+// Бутстраповский тогглер меню
 document.addEventListener('DOMContentLoaded', ()=>{
   const toggler = document.querySelector('.navbar-toggler');
   const target = document.getElementById('nav');
   if (!toggler || !target) return;
-  toggler.addEventListener('click', ()=>{
-    target.classList.toggle('show');
-  });
-});
-</script>
-
-<script>
-// Обновляем глобальную CSS‑переменную высоты навбара и поддерживаем актуальной
-document.addEventListener('DOMContentLoaded', ()=>{
-  function setNavHeightVar(){
-    const navbar = document.querySelector('.navbar');
-    if (!navbar) return;
-    const navH = Math.round(navbar.getBoundingClientRect().height);
-    document.documentElement.style.setProperty('--nav-h', navH + 'px');
-  }
-  setNavHeightVar();
-  window.addEventListener('resize', setNavHeightVar);
-});
-</script>
-
-<script>
-// Перетаскиваемый разделитель между центром и правым предпросмотром — улучшенное позиционирование
-document.addEventListener('DOMContentLoaded', ()=>{
-  const layout = document.querySelector('.layout-3cols');
-  const center = document.querySelector('.layout-3cols .center-col');
-  const right = document.querySelector('.layout-3cols .right-col');
-  const left = document.querySelector('.layout-3cols .left-col');
-  const navbar = document.querySelector('.navbar.fixed-top') || document.querySelector('.navbar');
-  if (!layout || !center || !right || !left) return;
-
-  // Создаём элемент‑разделитель
-  const res = document.createElement('div');
-  res.className = 'resizer';
-  document.body.appendChild(res);
-  console.log('resizer: created', res);
-
-  // Вычисляем позиции с учётом навбара и левой колонки
-  function computeLayoutPositions(){
-    const navH = navbar ? navbar.getBoundingClientRect().bottom : 0;
-    // Публикуем CSS‑переменную для использования в стилях
-    document.documentElement.style.setProperty('--nav-h', Math.round(navH) + 'px');
-    // Левая колонка под навбаром
-    left.style.top = navH + 'px';
-    left.style.height = `calc(100vh - ${navH + 10}px)`;
-    // Правая колонка под навбаром
-    right.style.top = navH + 'px';
-    right.style.height = `calc(100vh - ${navH + 10}px)`;
-    // Отступ слева для центра: чтобы начинался сразу после левой панели
-  const leftRect = left.getBoundingClientRect();
-  // prefer the layout left edge (more accurate for the center's containing block)
-  const layoutLeft = layout.getBoundingClientRect().left || 0;
-  const gap = 4; // tightened visual gap
-  const desired = Math.max(0, Math.round(leftRect.right - layoutLeft + gap));
-  center.style.marginLeft = desired + 'px';
-  console.log('resizer: layout', {leftW:leftRect.width, leftR:leftRect.right, layoutLeft, desired, gap});
-  }
-
-  // Вспомогательная: позиционирование разделителя относительно ширины правой панели
-  function positionResizer(pxWidth){
-    const w = pxWidth || right.getBoundingClientRect().width || Math.round(window.innerWidth * 0.5);
-    const leftPos = Math.max(0, Math.round(window.innerWidth - w - 10));
-  const navH = navbar ? navbar.getBoundingClientRect().bottom : 0;
-  const top = navH + 1; // на 1px ниже навбара, чтобы не перекрываться
-  res.style.left = leftPos + 'px';
-  res.style.top = top + 'px';
-  res.style.height = `calc(100vh - ${top}px)`;
-  }
-
-  // Установить ширину правой панели (px) и отступ центра справа
-  function setRightWidth(px){
-    const w = Math.max(160, Math.min(window.innerWidth * 0.9, px));
-    right.style.width = w + 'px';
-  // Небольшой зазор между центром и предпросмотром
-  center.style.marginRight = (w + 4) + 'px';
-    positionResizer(w);
-    localStorage.setItem('preview_width_px', String(w));
-  }
-
-  function loadSaved(){
-    computeLayoutPositions();
-    const v = parseInt(localStorage.getItem('preview_width_px'),10);
-    if (v && !isNaN(v)) setRightWidth(v);
-    else {
-    right.style.width = '50vw';
-  center.style.marginRight = 'calc(50vw + 4px)';
-      positionResizer(Math.round(window.innerWidth * 0.5));
-    }
-  }
-  loadSaved();
-
-  let dragging = false;
-  let startX = 0;
-  let startW = 0;
-
-  function onDown(e){
-    dragging = true;
-    startX = (e.touches ? e.touches[0].clientX : e.clientX);
-    startW = right.getBoundingClientRect().width;
-    document.body.style.userSelect = 'none';
-  }
-  function onMove(e){
-    if(!dragging) return;
-    const x = (e.touches ? e.touches[0].clientX : e.clientX);
-    const dx = startX - x; // moving left increases width
-    const newW = Math.max(160, Math.min(window.innerWidth * 0.9, startW + dx));
-    setRightWidth(newW);
-  }
-  function onUp(){ dragging = false; document.body.style.userSelect = ''; }
-
-  res.addEventListener('mousedown', onDown);
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
-  // Сенсорные события
-  res.addEventListener('touchstart', onDown, {passive:true});
-  window.addEventListener('touchmove', onMove, {passive:true});
-  window.addEventListener('touchend', onUp);
-
-  // Сброс по двойному клику
-  res.addEventListener('dblclick', ()=>{
-    right.style.width = '50vw';
-  center.style.marginRight = 'calc(50vw + 4px)';
-    localStorage.removeItem('preview_width_px');
-    positionResizer(Math.round(window.innerWidth * 0.5));
-  });
-
-  console.log('resizer: handlers attached');
-
-  // Перепозиционирование при изменении размера окна
-  window.addEventListener('resize', ()=>{
-    computeLayoutPositions();
-    const v = parseInt(localStorage.getItem('preview_width_px'),10);
-  if (v && !isNaN(v)) setRightWidth(v);
-  else { right.style.width = '50vw'; center.style.marginRight = 'calc(50vw + 4px)'; positionResizer(Math.round(window.innerWidth * 0.5)); }
-  });
+  toggler.addEventListener('click', ()=> target.classList.toggle('show'));
 });
 </script>
 
 </body>
 </html>
+

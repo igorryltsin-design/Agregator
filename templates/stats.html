@@ -19,6 +19,20 @@
   </div>
   <div class="card">
     <div class="card-body">
+      <h6 class="card-title">Активность по дням недели</h6>
+      <div class="chart-wrap"><canvas id="chart-weekdays"></canvas></div>
+      <div class="chart-switch" data-for="chart-weekdays"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h6 class="card-title">Активность по часам суток</h6>
+      <div class="chart-wrap"><canvas id="chart-hours"></canvas></div>
+      <div class="chart-switch" data-for="chart-hours"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
       <h6 class="card-title">Файлы по расширениям</h6>
       <div class="chart-wrap"><canvas id="chart-exts"></canvas></div>
       <div class="chart-legend" data-for="chart-exts"></div>
@@ -29,6 +43,20 @@
       <h6 class="card-title">Размеры файлов</h6>
       <div class="chart-wrap"><canvas id="chart-sizes"></canvas></div>
       <div class="chart-switch" data-for="chart-sizes"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h6 class="card-title">Средний размер по типам (МБ)</h6>
+      <div class="chart-wrap"><canvas id="chart-avgsize-type"></canvas></div>
+      <div class="chart-switch" data-for="chart-avgsize-type"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h6 class="card-title">Заполненность метаданных</h6>
+      <div class="chart-wrap"><canvas id="chart-meta"></canvas></div>
+      <div class="chart-switch" data-for="chart-meta"></div>
     </div>
   </div>
   <div class="card" style="grid-column: 1 / -1;">
@@ -43,6 +71,18 @@
       <h6 class="card-title">Активность по месяцам</h6>
       <div class="chart-wrap"><canvas id="chart-months"></canvas></div>
       <div class="chart-switch" data-for="chart-months"></div>
+    </div>
+  </div>
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-body">
+      <h6 class="card-title">Ключевые слова — облако</h6>
+      <div class="tag-cloud" id="cloud-keywords"></div>
+    </div>
+  </div>
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-body">
+      <h6 class="card-title">Ключи тегов — облако</h6>
+      <div class="tag-cloud" id="cloud-tagkeys"></div>
     </div>
   </div>
 </div>
@@ -98,7 +138,7 @@ function setupHiDPI(canvas) {
 function drawPie(canvas, labels, values, colors) {
   // ensure canvas fills its wrapper
   canvas.style.width = '100%';
-  canvas.style.height = '240px';
+  canvas.style.height = (canvas.dataset.h || '240') + 'px';
   const ctx = setupHiDPI(canvas);
   const w = canvas.width / (window.devicePixelRatio || 1), h = canvas.height / (window.devicePixelRatio || 1);
   ctx.clearRect(0,0,w,h);
@@ -132,7 +172,7 @@ function drawPie(canvas, labels, values, colors) {
 
 function drawBar(canvas, labels, values, color, horizontal=false) {
   canvas.style.width = '100%';
-  canvas.style.height = '240px';
+  canvas.style.height = (canvas.dataset.h || '240') + 'px';
   const ctx = setupHiDPI(canvas);
   const pad = 40; const gap = 8;
   const w = canvas.width / (window.devicePixelRatio || 1), h = canvas.height / (window.devicePixelRatio || 1);
@@ -175,7 +215,7 @@ function drawBar(canvas, labels, values, color, horizontal=false) {
 
 function drawLine(canvas, labels, values, color){
   canvas.style.width = '100%';
-  canvas.style.height = '240px';
+  canvas.style.height = (canvas.dataset.h || '240') + 'px';
   const ctx = setupHiDPI(canvas);
   const pad = 40;
   const w = canvas.width / (window.devicePixelRatio || 1), h = canvas.height / (window.devicePixelRatio || 1);
@@ -203,18 +243,73 @@ function drawLine(canvas, labels, values, color){
 
 // --- Chart state + UI helpers ---
 const chartState = {}; // id -> {labels, values, colors|color, kind, mode, hidden:Set}
+function cumulativeArray(arr){ const out=[]; let s=0; for(const v of arr){ s += (typeof v==='number'? v: (+v||0)); out.push(s); } return out; }
 function renderChartById(id){
   const st = chartState[id]; if (!st) return;
   const cv = document.getElementById(id); if (!cv) return;
   const idx = (st.labels||[]).map((l,i)=> st.hidden?.has(l) ? null : i).filter(i=>i!==null);
   const labels = idx.map(i=>st.labels[i]);
-  const values = idx.map(i=>st.values[i]);
+  let values = idx.map(i=>st.values[i]);
   const colors = st.colors ? idx.map(i=>st.colors[i]) : undefined;
   const mode = st.mode || st.defaultMode || (st.kind==='pie' ? 'pie' : (st.hbar ? 'hbar' : 'bar'));
-  if (mode === 'pie') drawPie(cv, labels, values, colors||[]);
-  else if (mode === 'line') drawLine(cv, labels, values, st.color);
-  else if (mode === 'hbar') drawBar(cv, labels, values, st.color, true);
+  const cum = (typeof mode === 'string' && mode.startsWith('cum-')) || st.cumulative;
+  const baseMode = (typeof mode === 'string' && mode.startsWith('cum-')) ? mode.slice(4) : mode;
+  if (cum) values = cumulativeArray(values);
+  if (baseMode === 'pie') drawPie(cv, labels, values, colors||[]);
+  else if (baseMode === 'line') drawLine(cv, labels, values, st.color);
+  else if (baseMode === 'hbar') drawBar(cv, labels, values, st.color, true);
   else drawBar(cv, labels, values, st.color, false);
+}
+
+// --- Tag cloud rendering ---
+function renderTagCloud(containerId, pairs){
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '';
+  if (!pairs || pairs.length === 0){
+    el.innerHTML = '<div class="text-muted">Нет данных</div>';
+    return;
+  }
+  const labels = pairs.map(x=>x[0]);
+  const values = pairs.map(x=>x[1]||0);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  // scale font size 12..34px, weight 400..700
+  const fmin = 12, fmax = 34;
+  const wmin = 400, wmax = 700;
+  const norm = (v)=> (max===min) ? 0.5 : (v - min) / (max - min);
+  // simple color palette
+  const colors = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc949','#af7aa1','#ff9da7','#9c755f','#bab0ab'];
+  // optional: shuffle for a more cloud-like distribution
+  const order = labels.map((_,i)=>i).sort(()=>Math.random()-0.5);
+  order.forEach(i=>{
+    const label = labels[i];
+    const val = values[i];
+    const t = norm(val);
+    const size = Math.round(fmin + (fmax - fmin) * t);
+    const weight = Math.round(wmin + (wmax - wmin) * t);
+    const color = colors[i % colors.length];
+    const span = document.createElement('span');
+    span.className = 'tag';
+    span.textContent = label;
+    span.style.fontSize = size + 'px';
+    span.style.fontWeight = String(weight);
+    span.style.color = color;
+    span.title = `${label}: ${val}`;
+    // Tooltip using shared helpers
+    span.addEventListener('mousemove', (e)=>{ showTooltip(e.clientX, e.clientY, `${label}: <b>${val}</b>`); });
+    span.addEventListener('mouseleave', ()=>{ hideTooltip(); });
+    // Click to search
+    span.addEventListener('click', ()=>{
+      const q = encodeURIComponent(label);
+      window.location.href = `/?q=${q}`;
+    });
+    const small = document.createElement('span');
+    small.className = 'count';
+    small.textContent = ` ${val}`;
+    span.appendChild(small);
+    el.appendChild(span);
+  });
 }
 function buildLegend(id){
   const st = chartState[id]; if (!st || st.kind!=='pie') return;
@@ -235,7 +330,9 @@ function buildSwitch(id, modes){
   if (!wrap) return;
   wrap.innerHTML = '';
   modes.forEach(m=>{
-    const b = document.createElement('button'); b.type='button'; b.className='switch-btn'; b.textContent=m.toUpperCase();
+    const b = document.createElement('button'); b.type='button'; b.className='switch-btn';
+    const label = (typeof m === 'string' && m.startsWith('cum-')) ? ('Σ ' + m.slice(4)) : m;
+    b.textContent = String(label).toUpperCase();
     if ((st.mode||st.defaultMode||modes[0]) === m) b.classList.add('active');
     b.addEventListener('click', ()=>{ st.mode=m; wrap.querySelectorAll('.switch-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderChartById(id); });
     wrap.appendChild(b);
@@ -251,6 +348,12 @@ function renderStats(){
     const exts = data.exts || [];
     const sizes = data.sizes || [];
     const months = data.months || [];
+    const weekdays = data.weekdays || [];
+    const hours = data.hours || [];
+    const keywords = data.top_keywords || [];
+    const tagkeys = data.tag_keys || [];
+    const avgSizeType = data.avg_size_type || [];
+    const metaPresence = data.meta_presence || [];
     // compute total
     const total = types.reduce((s,t)=>s + (t[1]||0), 0) || (authors.reduce((s,a)=>s+(a[1]||0),0) || 0);
     // draw
@@ -260,6 +363,14 @@ function renderStats(){
     if (exts.length>0) drawPie(document.getElementById('chart-exts'), exts.map(x=>x[0]), exts.map(x=>x[1]), palette); else document.getElementById('chart-exts').parentNode.innerHTML = '<div class="text-muted">Нет данных по расширениям</div>';
     if (sizes.length>0) drawBar(document.getElementById('chart-sizes'), sizes.map(x=>x[0]), sizes.map(x=>x[1]), '#59a14f', false); else document.getElementById('chart-sizes').parentNode.innerHTML = '<div class="text-muted">Нет данных по размерам</div>';
     if (months.length>0) drawLine(document.getElementById('chart-months'), months.map(x=>x[0]), months.map(x=>x[1]), '#2563eb'); else document.getElementById('chart-months').parentNode.innerHTML = '<div class="text-muted">Нет данных по активности</div>';
+    if (weekdays.length>0) drawBar(document.getElementById('chart-weekdays'), weekdays.map(x=>x[0]), weekdays.map(x=>x[1]), '#2563eb', false); else document.getElementById('chart-weekdays').parentNode.innerHTML = '<div class="text-muted">Нет данных по дням недели</div>';
+    if (hours.length>0) drawLine(document.getElementById('chart-hours'), hours.map(x=>x[0]), hours.map(x=>x[1]), '#4e79a7'); else document.getElementById('chart-hours').parentNode.innerHTML = '<div class="text-muted">Нет данных по часам</div>';
+    const kwTop = keywords.slice(0, Math.min(50, keywords.length));
+    const tkTop = tagkeys.slice(0, Math.min(50, tagkeys.length));
+    renderTagCloud('cloud-keywords', kwTop);
+    renderTagCloud('cloud-tagkeys', tkTop);
+    if (avgSizeType.length>0) drawBar(document.getElementById('chart-avgsize-type'), avgSizeType.map(x=>x[0]), avgSizeType.map(x=>x[1]), '#59a14f', false); else document.getElementById('chart-avgsize-type').parentNode.innerHTML = '<div class="text-muted">Нет данных по размерам типов</div>';
+    if (metaPresence.length>0) drawBar(document.getElementById('chart-meta'), metaPresence.map(x=>x[0]), metaPresence.map(x=>x[1]), '#76b7b2', false); else document.getElementById('chart-meta').parentNode.innerHTML = '<div class="text-muted">Нет данных о заполненности</div>';
 
     // Build/refresh chart state for interactivity and legends/switches
     chartState['chart-types']   = {id:'chart-types',   kind:'pie',    labels: types.map(x=>x[0]),   values: types.map(x=>x[1]),   colors: palette, hidden: chartState['chart-types']?.hidden || new Set(), defaultMode:'pie'};
@@ -268,6 +379,10 @@ function renderStats(){
     chartState['chart-authors'] = {id:'chart-authors', kind:'series', labels: authors.map(x=>x[0]), values: authors.map(x=>x[1]), color:'#f28e2b', mode: chartState['chart-authors']?.mode || 'hbar'};
     chartState['chart-sizes']   = {id:'chart-sizes',   kind:'series', labels: sizes.map(x=>x[0]),   values: sizes.map(x=>x[1]),   color:'#59a14f', mode: chartState['chart-sizes']?.mode || 'bar'};
     chartState['chart-months']  = {id:'chart-months',  kind:'series', labels: months.map(x=>x[0]),  values: months.map(x=>x[1]),  color:'#2563eb', mode: chartState['chart-months']?.mode || 'line'};
+    chartState['chart-weekdays']= {id:'chart-weekdays',kind:'series', labels: weekdays.map(x=>x[0]),values: weekdays.map(x=>x[1]),color:'#2563eb', mode: chartState['chart-weekdays']?.mode || 'bar'};
+    chartState['chart-hours']   = {id:'chart-hours',   kind:'series', labels: hours.map(x=>x[0]),   values: hours.map(x=>x[1]),   color:'#4e79a7', mode: chartState['chart-hours']?.mode || 'line'};
+    chartState['chart-avgsize-type'] = {id:'chart-avgsize-type', kind:'series', labels: avgSizeType.map(x=>x[0]), values: avgSizeType.map(x=>x[1]), color:'#59a14f', mode: chartState['chart-avgsize-type']?.mode || 'bar'};
+    chartState['chart-meta']    = {id:'chart-meta',    kind:'series', labels: metaPresence.map(x=>x[0]), values: metaPresence.map(x=>x[1]), color:'#76b7b2', mode: chartState['chart-meta']?.mode || 'bar'};
 
     // Build legends for pies and switches for series charts
     buildLegend('chart-types');
@@ -275,7 +390,11 @@ function renderStats(){
     buildSwitch('chart-years', ['bar','line']);
     buildSwitch('chart-authors', ['hbar','bar','line']);
     buildSwitch('chart-sizes', ['bar','line']);
-    buildSwitch('chart-months', ['line','bar']);
+    buildSwitch('chart-months', ['line','bar','cum-line','cum-bar']);
+    buildSwitch('chart-weekdays', ['bar','hbar']);
+    buildSwitch('chart-hours', ['line','bar']);
+    buildSwitch('chart-avgsize-type', ['bar','hbar']);
+    buildSwitch('chart-meta', ['bar','hbar']);
   }).catch(e=>{
     console.warn('Failed to load stats:', e);
     document.querySelectorAll('.chart-wrap').forEach(c=>c.innerHTML = '<div class="text-muted">Ошибка загрузки статистики</div>');

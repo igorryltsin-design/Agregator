@@ -25,16 +25,32 @@
       {% if abstract %}
         <div class="mb-2"><strong>Резюме:</strong></div>
         <pre class="preview-text">{{ abstract }}</pre>
+      {% endif %}
+      {% if keywords %}
+        <div class="mt-2"><strong>Ключевые слова:</strong></div>
+        <pre class="preview-text">{{ keywords }}</pre>
       {% elif content %}
         <div class="mb-2 text-muted">Фрагмент стенограммы:</div>
         <pre class="preview-text">{{ content }}</pre>
       {% else %}
         <div class="text-muted">Предпросмотр недоступен.</div>
       {% endif %}
+    {% elif is_image %}
+      {% if image_url %}
+        <img src="{{ image_url }}" alt="image" class="img-fluid" style="max-width:100%; max-height: 70vh; object-fit: contain;">
+      {% endif %}
+      {% if abstract %}
+        <div class="mt-2"><strong>Описание:</strong></div>
+        <pre class="preview-text">{{ abstract }}</pre>
+      {% endif %}
+      {% if keywords %}
+        <div class="mt-2"><strong>Ключевые слова:</strong></div>
+        <pre class="preview-text">{{ keywords }}</pre>
+      {% endif %}
     {% elif is_text %}
       <pre class="preview-text">{{ content }}</pre>
     {% elif thumbnail_url %}
-      <img src="{{ thumbnail_url }}" alt="thumbnail" class="img-fluid">
+       <img src="{{ thumbnail_url }}" alt="thumbnail" class="img-fluid">
     {% else %}
       <p>Предпросмотр для этого типа файла не поддерживается. Показан фрагмент текста (если доступен):</p>
       <pre class="preview-text">{{ content }}</pre>

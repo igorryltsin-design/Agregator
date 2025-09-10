@@ -1,0 +1,82 @@
+<!-- Компактный предпросмотр для iframe (embedded=1) -->
+<style>
+  .preview-text { white-space: pre-wrap; max-height: calc(100vh - 8rem); overflow:auto; word-break: break-word; overflow-wrap:anywhere; }
+</style>
+<div class="preview-embedded">
+  <div style="padding: .6rem .8rem; border-bottom:1px solid rgba(0,0,0,0.06); background:var(--card);">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:.5rem;">
+      <div style="font-weight:600;">Предпросмотр: {{ filename }}</div>
+      <div>
+        {% if file_id %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('file_detail', file_id=file_id) }}" target="_parent" rel="noopener">Открыть детально</a>
+        {% endif %}
+        <a class="btn btn-sm btn-secondary" href="{{ url_for('download_file', rel_path=filename) }}">Скачать</a>
+      </div>
+    </div>
+  </div>
+  <div style="padding: .8rem; background:var(--card);">
+    {% if is_pdf %}
+      <embed src="{{ url_for('view_file', rel_path=filename) }}" type="application/pdf" width="100%" height="100%" style="min-height:50vh;">
+    {% elif is_audio %}
+      {% if audio_url %}
+        <div class="mb-2 d-flex align-items-center" style="gap:.5rem;">
+          <audio controls preload="metadata" style="width:100%;">
+            <source src="{{ audio_url }}">
+          </audio>
+          {% if duration %}<span class="badge text-bg-secondary">{{ duration }}</span>{% endif %}
+        </div>
+      {% endif %}
+      {% if abstract %}
+        <div class="mb-2"><strong>Аннотация:</strong></div>
+        <pre class="preview-text">{{ abstract }}</pre>
+      {% endif %}
+      {% if keywords %}
+        <div class="mt-2"><strong>Ключевые слова:</strong></div>
+        <pre class="preview-text">{{ keywords }}</pre>
+      {% elif content %}
+        <div class="mb-2 text-muted">Фрагмент содержимого:</div>
+        <pre class="preview-text">{{ content }}</pre>
+      {% else %}
+        <div class="text-muted">Нет данных для предпросмотра.</div>
+      {% endif %}
+    {% elif is_image %}
+      {% if image_url %}
+        <img src="{{ image_url }}" alt="image" class="img-fluid" style="max-width:100%; max-height:70vh; object-fit:contain;">
+      {% endif %}
+      {% if abstract %}
+        <div class="mb-2"><strong>Описание:</strong></div>
+        <pre class="preview-text">{{ abstract }}</pre>
+      {% endif %}
+      {% if keywords %}
+        <div class="mt-2"><strong>Ключевые слова:</strong></div>
+        <pre class="preview-text">{{ keywords }}</pre>
+      {% endif %}
+    {% elif is_text %}
+      <pre class="preview-text">{{ content }}</pre>
+    {% elif thumbnail_url %}
+      <img src="{{ thumbnail_url }}" alt="thumbnail" class="img-fluid" style="max-width:100%;">
+    {% else %}
+      <p>Предпросмотр не поддерживается для этого типа файла. Ниже показан извлеченный текст (если доступен):</p>
+      <pre class="preview-text">{{ content }}</pre>
+    {% endif %}
+  </div>
+</div>
+<script>
+// Подсветка совпадений из ?mark=...
+(function(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    const mark = (params.get('mark') || '').trim();
+    if (!mark) return;
+    const terms = Array.from(new Set(mark.split(/[\s,|]+/).filter(x=>x && x.length >= 2))).slice(0,5);
+    if (!terms.length) return;
+    const els = document.querySelectorAll('.preview-text');
+    const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('(' + terms.map(esc).join('|') + ')', 'gi');
+    els.forEach(el => {
+      try{ el.innerHTML = el.innerHTML.replace(re, '<mark>$1</mark>'); }catch(_){ /* noop */ }
+    });
+  }catch(_){ /* ignore */ }
+})();
+</script>
+

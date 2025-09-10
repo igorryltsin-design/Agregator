@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Название</label>
+      <input class="form-control" name="title" value="{{ f.title or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Автор</label>
+      <input class="form-control" name="author" value="{{ f.author or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Год</label>
+      <input class="form-control" name="year" value="{{ f.year or '' }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Тип материала</label>
+      <select name="material_type" class="form-select">
+        {% for t in ['dissertation','article','textbook','report','note','document'] %}
+          <option value="{{ t }}" {% if f.material_type==t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">Ключевые слова (через запятую)</label>
+      <input class="form-control" name="keywords" value="{{ f.keywords or '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Научный руководитель</label>
+      <input class="form-control" name="advisor" value="{{ f.advisor or '' }}">
+    </div>
+  </div>
+  <hr/>
+  <h6 class="fw-bold">Гибкие теги</h6>
+  <div id="tags">
+    {% for t in tags %}
+      <div class="row g-2 mb-2">
+        <div class="col-md-4"><input class="form-control" name="tag_key[]" value="{{ t.key }}"></div>
+        <div class="col-md-8"><input class="form-control" name="tag_value[]" value="{{ t.value }}"></div>
+      </div>
+    {% else %}
+      <div class="row g-2 mb-2">
+        <div class="col-md-4"><input class="form-control" name="tag_key[]" placeholder="напр. специальность"></div>
+        <div class="col-md-8"><input class="form-control" name="tag_value[]" placeholder="напр. 05.13.01"></div>
+      </div>
+    {% endfor %}
+  </div>
+  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addTag()">Добавить тег</button>
+  <div class="mt-3">
+    <button class="btn btn-primary" type="submit">Сохранить</button>
+    <a class="btn btn-secondary" href="{{ url_for('file_detail', file_id=f.id) }}">Отмена</a>
+  </div>
+</form>
+<script>
+function addTag() {
+  const container = document.getElementById('tags');
+  const row = document.createElement('div');
+  row.className = 'row g-2 mb-2';
+  row.innerHTML = `
+    <div class="col-md-4"><input class="form-control" name="tag_key[]" placeholder="ключ"></div>
+    <div class="col-md-8"><input class="form-control" name="tag_value[]" placeholder="значение"></div>
+  `;
+  container.appendChild(row);
+}
+</script>
+{% endblock %}

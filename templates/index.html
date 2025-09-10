@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="layout-3cols">
+  <!-- Левая панель: фильтры и ИИ-поиск -->
+  <div class="left-col">
+    <div class="card sticky-top">
+      <div class="card-header fw-bold">Фильтры каталога</div>
+      <div class="card-body">
+        <form action="{{ url_for('index') }}" method="get">
+          <input type="hidden" name="preview_file" id="preview_file_input" value="{{ request.args.get('preview_file', '') }}">
+          <div class="input-group mb-2">
+            <input type="text" id="ai-input" class="form-control" placeholder="Спросите ИИ о содержимом...">
+            <button class="btn btn-outline-primary" id="ai-search-btn" type="button">Найти ИИ</button>
+          </div>
+          <div id="ai-status" class="small text-muted mb-2"></div>
+
+          <select name="type" class="form-select mb-2">
+            <option value="">Все типы</option>
+            {% for t, cnt in types %}
+              <option value="{{ t }}" {% if material_type==t %}selected{% endif %}>{{ t or "—" }} ({{ cnt }})</option>
+            {% endfor %}
+          </select>
+          <div class="mb-2">
+            <label class="form-label">Годы:</label>
+            <div class="input-group">
+              <input type="text" name="year_from" class="form-control" placeholder="От" value="{{ year_from or '' }}">
+              <input type="text" name="year_to" class="form-control" placeholder="До" value="{{ year_to or '' }}">
+            </div>
+          </div>
+          <button class="btn btn-sm btn-outline-primary w-100">Применить фильтры</button>
+        </form>
+        <hr/>
+
+        <div>
+          <p class="fw-semibold mb-2">Теги</p>
+          <form action="{{ url_for('index') }}" method="get" class="mb-2">
+            <input type="hidden" name="q" value="{{ q or '' }}">
+            <input type="hidden" name="type" value="{{ material_type or '' }}">
+            <input type="hidden" name="year_from" value="{{ year_from or '' }}">
+            <input type="hidden" name="year_to" value="{{ year_to or '' }}">
+            <div class="tag-facets" style="max-height: 38vh; overflow:auto; padding-right:.25rem;">
+              {% if tag_facets %}
+                {% for key, options in tag_facets.items() %}
+                  <details class="mb-2">
+                    <summary class="d-flex align-items-center" style="cursor:pointer;">{{ key }}</summary>
+                    <div class="mt-2">
+                      {% for val, cnt in options[:30] %}
+                        {% set pair = key ~ '=' ~ val %}
+                        <label class="d-flex align-items-center mb-1" style="gap:.4rem;">
+                          <input type="checkbox" name="tag" value="{{ pair }}" {% if pair in tag_filters %}checked{% endif %}>
+                          <span class="text-truncate" title="{{ val }}">{{ val }}</span>
+                          <span class="badge ms-auto {% if cnt == 0 %}badge-zero{% endif %}" title="{% if cnt == 0 %}0 при текущих фильтрах{% endif %}">{{ cnt }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  </details>
+                {% endfor %}
+              {% else %}
+                <div class="text-muted">Нет данных по теговым фасетам.</div>
+              {% endif %}
+            </div>
+            <div class="d-flex mt-2" style="gap:.5rem;">
+              <button class="btn btn-sm btn-outline-primary flex-fill" type="submit">Применить</button>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('index', q=q, type=material_type, year_from=year_from, year_to=year_to) }}">Сбросить</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Центр: результаты -->
+  <div class="center-col">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="mb-0">Результаты</h5>
+      <div class="text-muted" id="file-count">{{ files|length }} результатов</div>
+    </div>
+    <div class="list-group counter vh-100 overflow-auto pb-5" id="file-list">
+      {% for f in files %}
+        {% set chips = '' %}
+        {% if (f.material_type or '')|lower == 'audio' and tag_filters %}
+          {% set _tmp %}
+            {% for t in f.tags %}
+              {% set pair = t.key ~ '=' ~ t.value %}
+              {% if pair in tag_filters %}
+                <span class="tag-chip tag-chip-match" title="{{ t.key }}={{ t.value }}">{{ t.key }}={{ t.value }}</span>
+              {% endif %}
+            {% endfor %}
+          {% endset %}
+          {% set chips = _tmp %}
+        {% endif %}
+        <a class="list-group-item list-group-item-action {% if chips|trim %}audio-hit{% endif %}"
+           href="{{ url_for('preview_file', rel_path=(f.rel_path|replace('\\','/'))) }}"
+           data-detail-url="{{ url_for('file_detail', file_id=f.id) }}"
+           data-file-id="{{ f.id }}">
+          <div class="d-flex">
+            <span class="row-num" aria-hidden="true"></span>
+            <div class="flex-grow-1">
+              <div class="d-flex w-100 justify-content-between align-items-center">
+                <h6 class="mb-1 text-truncate">{{ f.title or f.filename }}</h6>
+                <div class="d-flex align-items-center ms-2" style="gap:.35rem;">
+                  {% if f.year %}<span class="type-badge" title="Год">{{ f.year }}</span>{% endif %}
+                  {% if f.material_type %}
+                    {% set mt = f.material_type or '' %}
+                    {% set mt_norm = (f.material_type or '')|lower %}
+                    {% set type_ru_map = {
+                      'dissertation':'Диссертация', 'dissertation_abstract':'Автореферат',
+                      'article':'Статья', 'textbook':'Учебник', 'monograph':'Монография',
+                      'report':'Отчет', 'patent':'Патент', 'presentation':'Презентация',
+                      'proceedings':'Труды конференции', 'standard':'Стандарт',
+                      'note':'Заметка', 'document':'Документ', 'audio':'Аудио', 'image':'Изображение'
+                    } %}
+                    <span class="type-badge" title="Тип" data-type="{{ f.material_type }}">{{ type_ru_map.get(mt_norm, f.material_type) }}</span>
+                  {% endif %}
+                  <button type="button" class="btn btn-sm btn-outline-secondary ms-2 refresh-btn" data-id="{{ f.id }}" title="Обновить">↻</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary ms-2 rename-btn" data-id="{{ f.id }}" title="Переименовать">✎</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger ms-2 delete-btn" data-id="{{ f.id }}" title="Удалить">✖</button>
+                </div>
+              </div>
+              <p class="mb-1 text-truncate">{{ f.author or "" }}</p>
+              <small class="text-muted text-truncate d-block">{{ f.rel_path }}</small>
+              {% if chips|trim %}
+                <div class="mt-1">{{ chips|safe }}</div>
+              {% endif %}
+            </div>
+          </div>
+        </a>
+      {% else %}
+        <div class="alert alert-info">Файлы не найдены. Загрузите новые или измените фильтры.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Правая панель: предпросмотр -->
+  <div class="right-col">
+    <div class="card sticky-top">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Предпросмотр</span>
+        <a href="#" id="detail-link" class="btn btn-sm btn-outline-secondary d-none" target="_blank">Открыть детально</a>
+      </div>
+      <div class="card-body p-0" id="preview-pane">
+        <div id="preview-skeleton" class="skeleton"></div>
+        <iframe id="preview-iframe" src="about:blank" style="width: 100%; height: 100%; border: none; background:#fff; display:block;"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Модал удаления файла -->
+<div id="delete-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.35); display:none; align-items:center; justify-content:center; z-index:3000;">
+  <div class="card" style="width: 420px; max-width: 92%;">
+    <div class="card-body">
+      <h6 class="card-title mb-2">Удалить файл</h6>
+      <div class="text-muted mb-2" id="del-filename"></div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="del-fs">
+        <label class="form-check-label" for="del-fs">Удалить с диска</label>
+      </div>
+      <div class="d-flex" style="gap:.5rem; justify-content:flex-end;">
+        <button class="btn btn-outline-secondary btn-sm" id="del-cancel" type="button">Отмена</button>
+        <button class="btn btn-danger btn-sm" id="del-confirm" type="button">Удалить</button>
+      </div>
+    </div>
+  </div>
+  </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const fileList = document.getElementById('file-list');
+  const previewIframe = document.getElementById('preview-iframe');
+  const detailLink = document.getElementById('detail-link');
+  const previewFileInput = document.getElementById('preview_file_input');
+  const previewSkeleton = document.getElementById('preview-skeleton');
+  const fileCountEl = document.getElementById('file-count');
+  const aiInput = document.getElementById('ai-input');
+  const aiBtn = document.getElementById('ai-search-btn');
+  const aiStatus = document.getElementById('ai-status');
+  let activeItem = null;
+  // Deletion modal elements
+  const delModal = document.getElementById('delete-modal');
+  const delName = document.getElementById('del-filename');
+  const delFs = document.getElementById('del-fs');
+  const delCancel = document.getElementById('del-cancel');
+  const delConfirm = document.getElementById('del-confirm');
+  let delId = null;
+
+  function showDel(id, name){ delId = id; if(delName) delName.textContent = name || ''; if(delModal) delModal.style.display='flex'; }
+  function hideDel(){ delId = null; if(delModal) delModal.style.display='none'; }
+
+  function setStatus(msg){ if (aiStatus) aiStatus.textContent = msg || ''; }
+
+  // Activate and load preview
+  function activateItem(item) {
+    if (activeItem) activeItem.classList.remove('active');
+    activeItem = item;
+    activeItem.classList.add('active');
+    const previewUrl = item.getAttribute('href');
+    const sep = previewUrl.includes('?') ? '&' : '?';
+    const previewUrlEmbedded = previewUrl + sep + 'embedded=1';
+    const detailUrl = item.getAttribute('data-detail-url');
+    const fileId = item.getAttribute('data-file-id');
+    if (previewSkeleton) previewSkeleton.classList.remove('hidden');
+    previewIframe.src = previewUrlEmbedded;
+    if (detailUrl) { detailLink.href = detailUrl; detailLink.classList.remove('d-none'); }
+    else { detailLink.classList.add('d-none'); }
+    if (previewFileInput) previewFileInput.value = fileId;
+  }
+
+  // Clicks in list
+  fileList.addEventListener('click', function(e) {
+    const rnBtn = e.target.closest('button.rename-btn');
+    if (rnBtn) {
+      e.preventDefault(); e.stopPropagation();
+      const id = rnBtn.getAttribute('data-id'); if (!id) return;
+      rnBtn.disabled = true; const prev = rnBtn.textContent; rnBtn.textContent = '…';
+      fetch(`/api/files/${id}/rename-suggest`).then(r=>r.json()).then(sug=>{
+        rnBtn.textContent = prev; rnBtn.disabled = false;
+        if (!sug || !sug.ok) { alert('Не удалось получить предложение имени'); return; }
+        const base = prompt('Базовое имя (можно поправить):', sug.suggested || '');
+        if (base === null) return;
+        fetch(`/api/files/${id}/rename`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ base }) })
+          .then(r=>r.json()).then(ans=>{
+            if (!ans || !ans.ok) { alert('Ошибка переименования: ' + (ans && ans.error || '')); return; }
+            const item = rnBtn.closest('a.list-group-item-action');
+            const p = item && item.querySelector('small.text-muted');
+            if (p && ans.rel_path) p.textContent = ans.rel_path;
+            if (item && ans.rel_path) item.setAttribute('href', '/preview/' + String(ans.rel_path).replace(/\\\\/g,'/'));
+            const h = item && item.querySelector('h6'); if (h && base) h.textContent = base;
+            if (item && item.classList.contains('active')){
+              const iframe = document.getElementById('preview-iframe');
+              if (iframe) { iframe.src = 'about:blank'; setTimeout(()=>{ item.click(); }, 50); }
+            }
+          });
+      }).catch(()=>{ rnBtn.textContent = prev; rnBtn.disabled = false; alert('Сбой сети'); });
+      return;
+    }
+
+    const refBtn = e.target.closest('button.refresh-btn');
+    if (refBtn) {
+      e.preventDefault(); e.stopPropagation();
+      const id = refBtn.getAttribute('data-id'); if (!id) return;
+      const prev = refBtn.textContent; refBtn.disabled = true; refBtn.textContent = '…';
+      fetch(`/api/files/${id}/refresh`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data.ok) throw new Error(data && data.error || 'failed');
+          const item = refBtn.closest('a.list-group-item-action');
+          const wasActive = item && item.classList.contains('active');
+          if (wasActive) {
+            const iframe = document.getElementById('preview-iframe');
+            if (iframe && iframe.src && iframe.src !== 'about:blank') {
+              try { const url = new URL(iframe.src); url.searchParams.set('ts', String(Date.now())); iframe.src = url.toString(); }
+              catch(_) { iframe.src = iframe.src; }
+            }
+          }
+          const f = data.file || {};
+          const h6 = item.querySelector('h6'); if (h6) h6.textContent = f.title || f.filename || h6.textContent;
+          const p = item.querySelector('p'); if (p) p.textContent = f.author || '';
+          const yearBadge = item.querySelector('span.type-badge[title="Год"]');
+          if (yearBadge) { if (f.year) yearBadge.textContent = f.year; else yearBadge.remove(); }
+          refBtn.textContent = '↻'; setTimeout(()=>{ refBtn.disabled = false; }, 400);
+        })
+        .catch(() => { refBtn.textContent = prev; refBtn.disabled = false; alert('Ошибка обновления'); });
+      return;
+    }
+    // handle delete click
+    const delBtn = e.target.closest('button.delete-btn');
+    if (delBtn) {
+      e.preventDefault(); e.stopPropagation();
+      const id = delBtn.getAttribute('data-id'); if (!id) return;
+      const item = delBtn.closest('a.list-group-item-action');
+      const title = item?.querySelector('h6')?.textContent || '';
+      showDel(id, title);
+      return;
+    }
+
+    const targetItem = e.target.closest('a.list-group-item-action');
+    if (targetItem) { e.preventDefault(); activateItem(targetItem); }
+  });
+
+  previewIframe.addEventListener('load', function() { if (previewSkeleton) previewSkeleton.classList.add('hidden'); });
+
+  // Preselect file
+  const urlParams = new URLSearchParams(window.location.search);
+  const fileToPreview = urlParams.get('preview_file');
+  if (fileToPreview) {
+    const itemToActivate = fileList.querySelector(`[data-file-id="${fileToPreview}"]`);
+    if (itemToActivate) { activateItem(itemToActivate); itemToActivate.scrollIntoView({ block: 'center' }); }
+  } else {
+    const firstItem = fileList.querySelector('a.list-group-item-action');
+    if (firstItem) activateItem(firstItem);
+  }
+
+  // AI search
+  function ensureAiCard(){
+    let card = document.getElementById('ai-result-card');
+    if (card) return card;
+    const center = document.querySelector('.center-col');
+    if (!center) return null;
+    card = document.createElement('div');
+    card.id = 'ai-result-card';
+    card.className = 'card mb-2';
+    card.innerHTML = '<div class="card-header fw-semibold">Ответ ИИ</div>'+
+                     '<div class="card-body">'+
+                     '<div id="ai-answer" class="mb-2"></div>'+
+                     '<div id="ai-sources"></div>'+
+                     '</div>';
+    const anchor = center.querySelector('#file-list');
+    center.insertBefore(card, anchor);
+    return card;
+  }
+  function openAiSource(fileId, relPath, mark){
+    try {
+      const item = fileList?.querySelector(`[data-file-id="${fileId}"]`);
+      if (item) {
+        activateItem(item);
+        const iframe = document.getElementById('preview-iframe');
+        if (iframe && iframe.src) {
+          try{ const u = new URL(iframe.src); u.searchParams.set('mark', String(mark||'')); u.searchParams.set('ts', String(Date.now())); iframe.src = u.toString(); }catch(_){ }
+        }
+      } else if (relPath) {
+        const url = `/preview/${String(relPath).replace(/\\\\/g,'/')}`;
+        const sep = url.includes('?') ? '&' : '?';
+        previewIframe.src = url + sep + `embedded=1&mark=${encodeURIComponent(mark||'')}`;
+        if (detailLink && fileId) { detailLink.href = `/file/${fileId}`; detailLink.classList.remove('d-none'); }
+      }
+    } catch(e){}
+  }
+  async function doAiSearch(){
+    const q = (aiInput?.value || '').trim();
+    if (!q) { setStatus('Введите вопрос.'); return; }
+    if (aiBtn) { aiBtn.disabled = true; aiBtn.textContent = 'Ищу...'; }
+    // Collapse/clear previous AI card while loading
+    const existed = document.getElementById('ai-result-card');
+    if (existed) {
+      existed.style.display = 'none';
+      const ans = existed.querySelector('#ai-answer'); if (ans) ans.textContent='';
+      const src = existed.querySelector('#ai-sources'); if (src) src.innerHTML='';
+    }
+    setStatus('Формирую ответ и подбираю источники...');
+    try{
+      const r = await fetch('/api/ai-search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query: q, top_k: 20, sources:{ tags:true, text:true } })});
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const aiCard = ensureAiCard();
+      const aiAnswer = document.getElementById('ai-answer');
+      const aiSources = document.getElementById('ai-sources');
+      const items = Array.isArray(data.items)? data.items: [];
+      const mark = (data.keywords||[]).slice(0,3).join(' ');
+      // Only show the card if we have something meaningful
+      const shouldShow = (items && items.length) || (data.answer && String(data.answer).trim().length);
+      if (!shouldShow) { if (aiCard) aiCard.remove(); setStatus('Ничего не найдено'); return; }
+      if (aiCard) aiCard.style.display = '';
+      if (aiSources) {
+        aiSources.innerHTML = items.map((it, idx)=>{
+          const title = it.title || it.rel_path || ('Файл #' + it.file_id);
+          const snip = (it.snippets && it.snippets[0]) ? it.snippets[0] : '';
+          return `<div class="mb-2">
+            <a href="#" class="ai-source" data-idx="${idx+1}" data-file-id="${it.file_id}" data-rel-path="${(it.rel_path||'').replace(/\"/g,'&quot;')}" data-mark="${mark.replace(/\"/g,'&quot;')}"><strong>[${idx+1}] ${title}</strong></a>
+            ${snip ? `<div class="text-muted small mt-1">${snip}</div>` : ''}
+          </div>`;
+        }).join('');
+        // Click handling for sources
+        aiSources.onclick = (e)=>{
+          const a = e.target.closest('a.ai-source');
+          if (!a) return;
+          e.preventDefault();
+          openAiSource(a.getAttribute('data-file-id'), a.getAttribute('data-rel-path'), a.getAttribute('data-mark'));
+        };
+      }
+      if (aiAnswer) {
+        const raw = (data.answer||'').trim() || 'Ответ сформирован по найденным источникам ниже.';
+        // Linkify references like [1], [2]
+        const withLinks = raw.replace(/\[(\d{1,2})\]/g, (m, p1)=>{
+          const n = parseInt(p1,10);
+          if (!n || n < 1 || n > items.length) return m;
+          const it = items[n-1] || {};
+          const rp = String(it.rel_path||'').replace(/\"/g,'&quot;');
+          return `<a href="#" class="ai-ref" data-idx="${n}" data-file-id="${it.file_id}" data-rel-path="${rp}" data-mark="${mark.replace(/\"/g,'&quot;')}">[${n}]</a>`;
+        });
+        aiAnswer.innerHTML = withLinks;
+        // Clicks on [n]
+        aiAnswer.onclick = (e)=>{
+          const a = e.target.closest('a.ai-ref');
+          if (!a) return;
+          e.preventDefault();
+          openAiSource(a.getAttribute('data-file-id'), a.getAttribute('data-rel-path'), a.getAttribute('data-mark'));
+        };
+      }
+      setStatus('Готово');
+    }catch(e){
+      const aiCard = ensureAiCard(); if (aiCard) aiCard.classList.remove('d-none');
+      const aiSources = document.getElementById('ai-sources'); if (aiSources) aiSources.innerHTML = `<div class="text-danger">Ошибка: ${String(e)}</div>`;
+      setStatus('Не удалось выполнить ИИ‑поиск');
+    } finally {
+      if (aiBtn) { aiBtn.disabled = false; aiBtn.textContent = 'Найти ИИ'; }
+    }
+  }
+  aiBtn?.addEventListener('click', doAiSearch);
+  aiInput?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') { e.preventDefault(); doAiSearch(); } });
+
+  // Deletion modal handlers
+  delCancel?.addEventListener('click', hideDel);
+  delConfirm?.addEventListener('click', async ()=>{
+    if (!delId) return;
+    const removeFs = delFs?.checked ? '1' : '0';
+    try{
+      const r = await fetch(`/api/files/${delId}?rm=${removeFs}`, { method:'DELETE' });
+      const ok = r.ok;
+      hideDel();
+      if (!ok) { alert('Не удалось удалить файл'); return; }
+      // Remove from list and update counter
+      const a = fileList.querySelector(`a.list-group-item-action [data-id="${delId}"]`)?.closest('a.list-group-item-action')
+               || fileList.querySelector(`a.list-group-item-action[data-file-id="${delId}"]`);
+      if (a) { const wasActive = a.classList.contains('active'); a.remove();
+        // update count
+        const cnt = fileList.querySelectorAll('a.list-group-item-action').length;
+        if (fileCountEl) fileCountEl.textContent = `${cnt} результатов`;
+        // activate next item if removed active
+        if (wasActive) {
+          const next = fileList.querySelector('a.list-group-item-action');
+          if (next) activateItem(next); else { previewIframe.src='about:blank'; detailLink.classList.add('d-none'); }
+        }
+      }
+    }catch(e){ hideDel(); alert('Ошибка сети при удалении'); }
+  });
+
+  // Keyboard navigation
+  window.addEventListener('keydown', function(e) {
+    if (!fileList) return;
+    if (['ArrowDown','ArrowUp','Enter'].includes(e.key)) e.preventDefault();
+    if (e.key === 'ArrowDown') {
+      const items = Array.from(fileList.querySelectorAll('a.list-group-item-action'));
+      if (!items.length) return;
+      const idx = items.indexOf(activeItem);
+      const next = items[Math.min(items.length - 1, Math.max(0, idx + 1))] || items[0];
+      if (next && next !== activeItem) { activateItem(next); next.scrollIntoView({ block: 'nearest' }); }
+    } else if (e.key === 'ArrowUp') {
+      const items = Array.from(fileList.querySelectorAll('a.list-group-item-action'));
+      if (!items.length) return;
+      const idx = items.indexOf(activeItem);
+      const prev = items[Math.max(0, idx - 1)] || items[0];
+      if (prev && prev !== activeItem) { activateItem(prev); prev.scrollIntoView({ block: 'nearest' }); }
+    } else if (e.key === 'Enter') {
+      if (detailLink && !detailLink.classList.contains('d-none')) { window.open(detailLink.href, '_blank'); }
+    }
+  });
+});
+</script>
+{% endblock %}

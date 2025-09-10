@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <div>Предпросмотр: {{ filename }}</div>
+    <div>
+      <a class="btn btn-sm btn-secondary" href="{{ url_for('download_file', rel_path=filename) }}">Скачать</a>
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('file_detail', file_id=file_id) }}">Открыть карточку</a>
+    </div>
+  </div>
+  <div class="card-body preview-container" style="height: calc(100vh - 12rem);">
+    {% if is_pdf %}
+      <!-- Простой встрой для оффлайн-просмотра PDF (рендерит браузер) -->
+      <embed src="{{ url_for('view_file', rel_path=filename) }}" type="application/pdf" width="100%" style="height: 100%;">
+    {% elif is_audio %}
+      {% if audio_url %}
+        <div class="mb-2 d-flex align-items-center" style="gap:.5rem;">
+          <audio controls preload="metadata" style="width:100%;">
+            <source src="{{ audio_url }}">
+          </audio>
+          {% if duration %}<span class="badge text-bg-secondary">{{ duration }}</span>{% endif %}
+        </div>
+      {% endif %}
+      {% if abstract %}
+        <div class="mb-2"><strong>Резюме:</strong></div>
+        <pre class="preview-text">{{ abstract }}</pre>
+      {% endif %}
+      {% if keywords %}
+        <div class="mt-2"><strong>Ключевые слова:</strong></div>
+        <pre class="preview-text">{{ keywords }}</pre>
+      {% elif content %}
+        <div class="mb-2 text-muted">Фрагмент стенограммы:</div>
+        <pre class="preview-text">{{ content }}</pre>
+      {% else %}
+        <div class="text-muted">Предпросмотр недоступен.</div>
+      {% endif %}
+    {% elif is_image %}
+      {% if image_url %}
+        <img src="{{ image_url }}" alt="image" class="img-fluid" style="max-width:100%; max-height: 70vh; object-fit: contain;">
+      {% endif %}
+      {% if abstract %}
+        <div class="mt-2"><strong>Описание:</strong></div>
+        <pre class="preview-text">{{ abstract }}</pre>
+      {% endif %}
+      {% if keywords %}
+        <div class="mt-2"><strong>Ключевые слова:</strong></div>
+        <pre class="preview-text">{{ keywords }}</pre>
+      {% endif %}
+    {% elif is_text %}
+      <pre class="preview-text">{{ content }}</pre>
+    {% elif thumbnail_url %}
+       <img src="{{ thumbnail_url }}" alt="thumbnail" class="img-fluid">
+    {% else %}
+      <p>Предпросмотр для этого типа файла не поддерживается. Показан фрагмент текста (если доступен):</p>
+      <pre class="preview-text">{{ content }}</pre>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

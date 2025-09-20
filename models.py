@@ -47,7 +47,7 @@ class CollectionMember(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     collection_id = db.Column(db.Integer, db.ForeignKey("collections.id", ondelete="CASCADE"), index=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    role = db.Column(db.String, nullable=False, default="viewer")  # viewer/editor
+    role = db.Column(db.String, nullable=False, default="viewer")  # роли viewer/editor
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     collection = db.relationship("Collection", backref="members", lazy=True)
@@ -141,7 +141,7 @@ class LlmEndpoint(db.Model):
     model = db.Column(db.String, nullable=False)
     api_key = db.Column(db.String, nullable=True)
     weight = db.Column(db.Float, nullable=False, default=1.0)
-    purpose = db.Column(db.String, nullable=True)  # e.g. rerank, summary, transcription
+    purpose = db.Column(db.String, nullable=True)  # например rerank, summary, transcription
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

@@ -1,15 +1,15 @@
-# Multi-stage build: build frontend with Node, then run Flask with Python
+# Многоэтапная сборка: сначала frontend на Node, затем запуск Flask на Python
 
 FROM node:20-alpine AS web
 WORKDIR /build
 
-# Build main frontend
+# Сборка основного фронтенда
 COPY frontend/package*.json frontend/
 RUN cd frontend && npm ci
 COPY frontend frontend
 RUN cd frontend && npm run build
 
-# Build AiWord frontend (served from /aiword)
+# Сборка фронтенда AiWord (отдаётся из /aiword)
 COPY AiWord/package*.json AiWord/
 RUN cd AiWord && npm ci
 COPY AiWord AiWord
@@ -21,22 +21,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 WORKDIR /app
 
-# System deps: tesseract for OCR, ffmpeg for audio duration/transcription helpers
+# Системные зависимости: tesseract для OCR, ffmpeg для длительности/транскрипции аудио
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr tesseract-ocr-rus ffmpeg libmagic1 curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps
+# Python-зависимости
 COPY requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# App sources
+# Исходники приложения
 COPY . ./
-# Copy built frontends from the Node stage
+# Копируем собранные фронтенды из этапа Node
 COPY --from=web /build/frontend/dist ./frontend/dist
 COPY --from=web /build/AiWord/dist ./AiWord/dist
 
-# Default env (override in compose)
+# Переменные окружения по умолчанию (переопределяются в compose)
 ENV FLASK_ENV=production \
     SCAN_ROOT=/data \
     OCR_LANGS=rus+eng \

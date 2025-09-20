@@ -1,5 +1,5 @@
 from logging.handlers import RotatingFileHandler
-# REST API and import/export routes moved to `routes.py` as a Blueprint.
+# REST API и маршруты импорта/экспорта перенесены в `routes.py` как Blueprint.
 import os
 import re
 import json
@@ -18,7 +18,7 @@ from queue import Queue
 
 try:
     from flask import copy_current_app_context
-except ImportError:  # older Flask fallback
+except ImportError:  # запасной вариант для старых версий Flask
     def copy_current_app_context(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -45,7 +45,7 @@ from models import (
     AiWordAccess,
 )
 
-import fitz  # PyMuPDF
+import fitz  # библиотека PyMuPDF
 import requests
 from dotenv import load_dotenv
 try:
@@ -65,7 +65,7 @@ try:
 except ImportError:
     djvu = None
 try:
-    import pytesseract  # optional OCR for image-based PDFs
+    import pytesseract  # необязательный OCR для PDF, состоящих из изображений
 except ImportError:
     pytesseract = None
 try:
@@ -154,6 +154,8 @@ LLM_PURPOSES = [
     {'id': 'rerank', 'label': 'Реранжирование поиска'},
     {'id': 'default', 'label': 'По умолчанию'},
 ]
+TASK_RETENTION_WINDOW = timedelta(days=1)
+TASK_FINAL_STATUSES = ('completed', 'error', 'cancelled')
 
 def _row_text_for_search(f: File) -> str:
     parts = [
@@ -166,10 +168,10 @@ def _row_text_for_search(f: File) -> str:
         pass
     return ' '.join(parts)
 
-# Simple in‑memory cache for AI keyword expansions
+# Простое кэширующее хранилище в памяти для расширения ключевых слов ИИ
 AI_EXPAND_CACHE: dict[str, tuple[float, list[str]]] = {}
 
-# Scoring weights and options (tunable via env)
+# Весовые коэффициенты и параметры оценки (можно менять через переменные окружения)
 def _getf(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, str(default)))
@@ -183,7 +185,7 @@ AI_SCORE_EXCERPT = _getf('AI_SCORE_EXCERPT', 1.0)
 AI_SCORE_ABSTRACT = _getf('AI_SCORE_ABSTRACT', 1.0)
 AI_SCORE_TAG = _getf('AI_SCORE_TAG', 1.0)
 AI_BOOST_PHRASE = _getf('AI_BOOST_PHRASE', 3.0)
-AI_BOOST_MULTI = _getf('AI_BOOST_MULTI', 0.6)  # extra per additional distinct term
+AI_BOOST_MULTI = _getf('AI_BOOST_MULTI', 0.6)  # дополнительный бонус за каждое уникальное слово
 AI_BOOST_SNIPPET_COOCCUR = _getf('AI_BOOST_SNIPPET_COOCCUR', 0.8)
 
 def _now() -> float:
@@ -195,7 +197,7 @@ def _sha256(s: str) -> str:
     except Exception:
         return hashlib.sha1((s or "").encode("utf-8", errors="ignore")).hexdigest()
 
-# ------------------- Configuration -------------------
+# ------------------- Конфигурация -------------------
 
 BASE_DIR = Path(__file__).parent
 # Подхватить .env, если есть рядом
@@ -211,13 +213,13 @@ SCAN_ROOT = Path(os.getenv("SCAN_ROOT", str(BASE_DIR / "sample_library")))
 EXTRACT_TEXT = getenv_bool("EXTRACT_TEXT", True)
 OCR_LANGS_CFG = os.getenv("OCR_LANGS", "rus+eng")
 PDF_OCR_PAGES_CFG = int(os.getenv("PDF_OCR_PAGES", "5"))
-# Always OCR the first page for dissertations (default: on)
+# Всегда запускать OCR для первой страницы диссертации (по умолчанию включено)
 ALWAYS_OCR_FIRST_PAGE_DISSERTATION = getenv_bool("OCR_DISS_FIRST_PAGE", True)
 DEFAULT_USE_LLM = getenv_bool("DEFAULT_USE_LLM", False)
 DEFAULT_PRUNE = getenv_bool("DEFAULT_PRUNE", True)
 
 LMSTUDIO_API_BASE = os.getenv("LMSTUDIO_API_BASE", "http://localhost:1234/v1")
-# Default LLM model
+# Модель LLM по умолчанию
 LMSTUDIO_MODEL = os.getenv("LMSTUDIO_MODEL", "google/gemma-3n-e4b")
 LMSTUDIO_API_KEY = os.getenv("LMSTUDIO_API_KEY", "")
 TRANSCRIBE_ENABLED = getenv_bool("TRANSCRIBE_ENABLED", True)
@@ -226,7 +228,7 @@ TRANSCRIBE_MODEL_PATH = os.getenv("TRANSCRIBE_MODEL_PATH", os.getenv('FASTER_WHI
 TRANSCRIBE_LANGUAGE = os.getenv("TRANSCRIBE_LANGUAGE", "ru")
 IMAGES_VISION_ENABLED = getenv_bool("IMAGES_VISION_ENABLED", False)
 KEYWORDS_TO_TAGS_ENABLED = getenv_bool("KEYWORDS_TO_TAGS_ENABLED", True)
-# Order of pre-LLM type detection steps
+# Порядок шагов определения типа до применения LLM
 TYPE_DETECT_FLOW = os.getenv("TYPE_DETECT_FLOW", "extension,filename,heuristics,llm")
 TYPE_LLM_OVERRIDE = getenv_bool("TYPE_LLM_OVERRIDE", True)
 RENAME_PATTERNS = {
@@ -240,7 +242,7 @@ RENAME_PATTERNS = {
     'audio': 'АУД.{title}',
     'default': '{abbr}.{title}.{author_last}'
 }
-# AI rerank (placed here after getenv_bool is defined)
+# Реранжирование на основе ИИ (расположено после определения getenv_bool)
 AI_RERANK_LLM = getenv_bool('AI_RERANK_LLM', False)
 
 # Куда сохранять загруженные файлы: подпапка внутри SCAN_ROOT
@@ -293,13 +295,13 @@ PROMPTS = {
     )
 }
 SUMMARIZE_AUDIO = getenv_bool("SUMMARIZE_AUDIO", False)
-# Simple keywords extraction for audio transcripts via LLM (lightweight prompt)
+# Упрощённое извлечение ключевых слов из аудиостенограмм через LLM (лёгкий промпт)
 AUDIO_KEYWORDS_LLM = getenv_bool("AUDIO_KEYWORDS_LLM", True)
 
-# Cache dir for faster-whisper models (when auto-downloading by alias)
+# Каталог кэша для моделей faster-whisper (когда автозагрузка по псевдониму)
 FW_CACHE_DIR = Path(os.getenv("FASTER_WHISPER_CACHE_DIR", str((Path(__file__).parent / "models" / "faster-whisper").resolve())))
 
-# ------------------- Runtime settings persistence -------------------
+# ------------------- Сохранение настроек во время работы -------------------
 
 SETTINGS_STORE_PATH = BASE_DIR / 'runtime_settings.json'
 
@@ -581,7 +583,7 @@ def _render_preview(
     """
     return _html_page(f"Предпросмотр — {rel_url}", body, extra_head=_PREVIEW_HEAD)
 
-# ------------------- Helpers -------------------
+# ------------------- Вспомогательные функции -------------------
 
 def _normalize_author(val):
     """Convert various author representations (list/dict/etc.) to a string.
@@ -590,7 +592,7 @@ def _normalize_author(val):
     try:
         if val is None:
             return None
-        # list/tuple of names or dicts
+        # список/кортеж имён или словарей
         if isinstance(val, (list, tuple, set)):
             out = []
             for x in val:
@@ -606,7 +608,7 @@ def _normalize_author(val):
                 if s:
                     out.append(s)
             return ", ".join(out) if out else None
-        # single dict like {first,last} or {name}
+        # один словарь вида {first,last} или {name}
         if isinstance(val, dict):
             if 'name' in val and val['name']:
                 s = str(val['name']).strip()
@@ -633,12 +635,12 @@ def _normalize_year(val):
     except Exception:
         return None
 
-# --------- Richer tag extraction (general + type-specific) ---------
+# --------- Расширенное извлечение тегов (общие и специфичные по типу) ---------
 def extract_richer_tags(material_type: str, text: str, filename: str = "") -> dict:
     t = (text or "")
     tl = t.lower()
     tags: dict[str, str] = {}
-    # language guess
+    # предположение языка
     try:
         cyr = sum(1 for ch in t if ('а' <= ch.lower() <= 'я') or (ch in 'ёЁ'))
         lat = sum(1 for ch in t if 'a' <= ch.lower() <= 'z')
@@ -646,7 +648,7 @@ def extract_richer_tags(material_type: str, text: str, filename: str = "") -> di
             tags['lang'] = 'ru' if cyr >= lat else 'en'
     except Exception:
         pass
-    # common identifiers
+    # распространённые идентификаторы
     m = re.search(r"\b(10\.\d{4,9}\/[\w\-\.:;()\/[\]A-Za-z0-9]+)", t)
     if m:
         tags.setdefault('doi', m.group(1))
@@ -662,7 +664,7 @@ def extract_richer_tags(material_type: str, text: str, filename: str = "") -> di
 
     mt = (material_type or '').strip().lower()
     if mt in ("dissertation", "dissertation_abstract"):
-        # specialty code like 05.13.11
+        # код специальности вида 05.13.11
         m = re.search(r"\b(\d{2}\.\d{2}\.\d{2})\b", t)
         if m:
             tags.setdefault('specialty', m.group(1))
@@ -727,7 +729,7 @@ def extract_richer_tags(material_type: str, text: str, filename: str = "") -> di
 
 def _fw_alias_to_repo(ref: str) -> str | None:
     r = (ref or '').strip().lower()
-    # Common aliases
+    # Распространённые псевдонимы
     alias = {
         'tiny': 'Systran/faster-whisper-tiny',
         'base': 'Systran/faster-whisper-base',
@@ -735,7 +737,7 @@ def _fw_alias_to_repo(ref: str) -> str | None:
         'medium': 'Systran/faster-whisper-medium',
         'large-v2': 'Systran/faster-whisper-large-v2',
         'large-v3': 'Systran/faster-whisper-large-v3',
-        # English distilled variants
+        # Сжатые английские варианты
         'distil-small.en': 'Systran/faster-distil-whisper-small.en',
         'distil-medium.en': 'Systran/faster-distil-whisper-medium.en',
         'distil-large-v2': 'Systran/faster-distil-whisper-large-v2',
@@ -764,12 +766,12 @@ def _ensure_faster_whisper_model(model_ref: str) -> str:
         if hf_snapshot_download is None:
             app.logger.warning("Пакет huggingface_hub не установлен — автозагрузка модели faster-whisper недоступна")
             return ''
-        # Compute target dir inside cache
+        # вычислить целевую директорию внутри кэша
         FW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         safe_name = repo.replace('/', '__')
         target_dir = FW_CACHE_DIR / safe_name
         if not target_dir.exists() or not any(target_dir.iterdir()):
-            # download/snapshot into target_dir
+            # загрузить/снять снимок в target_dir
             hf_snapshot_download(repo_id=repo, local_dir=str(target_dir), local_dir_use_symlinks=False, revision=None)
         return str(target_dir)
     except Exception as e:
@@ -781,7 +783,20 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret")
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{BASE_DIR / 'catalogue.db'}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["JSON_AS_ASCII"] = False
-# Limit max upload size (default 50 MB; configurable via env MAX_CONTENT_LENGTH)
+# Логирование: файл с ротацией до 100 МБ
+LOG_DIR = BASE_DIR / 'logs'
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    LOG_DIR = BASE_DIR
+log_path = LOG_DIR / 'agregator.log'
+if not any(isinstance(h, RotatingFileHandler) for h in app.logger.handlers):
+    rotating_handler = RotatingFileHandler(log_path, maxBytes=100 * 1024 * 1024, backupCount=5, encoding='utf-8')
+    rotating_handler.setLevel(logging.INFO)
+    rotating_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s %(name)s: %(message)s'))
+    app.logger.addHandler(rotating_handler)
+    logging.getLogger().setLevel(logging.INFO)
+# Ограничить максимальный размер загрузки (по умолчанию 50 МБ; настраивается через MAX_CONTENT_LENGTH)
 try:
     app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', str(50 * 1024 * 1024)))
 except Exception:
@@ -798,7 +813,7 @@ app.config.setdefault('IMPORT_SUBDIR', IMPORT_SUBDIR)
 app.config.setdefault('MOVE_ON_RENAME', MOVE_ON_RENAME)
 app.config.setdefault('TYPE_DIRS', TYPE_DIRS)
 
-# ------------------- Utilities -------------------
+# ------------------- Утилиты -------------------
 
 ALLOWED_EXTS = {".pdf", ".txt", ".md", ".docx", ".rtf", ".mp3", ".wav", ".m4a", ".flac", ".ogg",
                 ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
@@ -1228,6 +1243,24 @@ def _llm_response_indicates_busy(response) -> bool:
     return False
 
 
+def _llm_choice_url(choice: dict) -> str:
+    base = str(choice.get('base_url') or LMSTUDIO_API_BASE or '').strip()
+    if not base:
+        return ''
+    base = base.rstrip('/')
+    if not base:
+        return ''
+    return base if base.endswith('/chat/completions') else f"{base}/chat/completions"
+
+
+def _llm_choice_headers(choice: dict) -> dict:
+    headers = {"Content-Type": "application/json"}
+    key = choice.get('api_key')
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
 def _is_public_path(path: str) -> bool:
     if any(path.startswith(prefix) for prefix in _PUBLIC_PREFIXES):
         return True
@@ -1425,7 +1458,7 @@ def api_admin_user_detail(user_id: int):
 
 ensure_default_admin()
 
-# ------------------- Collections bootstrap/migration -------------------
+# ------------------- Инициализация и миграции коллекций -------------------
 def _slugify(s: str) -> str:
     s = (s or '').strip().lower()
     s = re.sub(r"[^a-z0-9_\-а-яё]+", "-", s)
@@ -1435,14 +1468,14 @@ def _slugify(s: str) -> str:
     return s
 
 def ensure_collections_schema():
-    """Ensure collections model/table and files.collection_id exist and seed base collection.
-    Assign base collection to files lacking it.
+    """Проверить наличие модели/таблицы коллекций и поля files.collection_id, создать базовую коллекцию.
+    Привязать базовую коллекцию к файлам, у которых она отсутствует.
     """
     try:
         with app.app_context():
-            # Create tables if missing
+            # Создать таблицы, если их ещё нет
             db.create_all()
-            # Add column collection_id to files if absent
+            # Добавить столбец collection_id в files, если его нет
             try:
                 from sqlalchemy import text as _text
                 with db.engine.begin() as conn:
@@ -1462,28 +1495,28 @@ def ensure_collections_schema():
                         conn.execute(_text("ALTER TABLE users ADD COLUMN full_name TEXT"))
             except Exception:
                 pass
-            # Ensure base collection exists
+            # Убедиться, что базовая коллекция существует
             base = Collection.query.filter_by(slug='base').first()
             if not base:
                 base = Collection(name='Базовая коллекция', slug='base', searchable=True, graphable=True)
                 db.session.add(base)
                 db.session.commit()
-            # Assign base to any files with NULL collection_id
+            # Назначить базовую коллекцию всем файлам с NULL в collection_id
             try:
                 File.query.filter(File.collection_id.is_(None)).update({File.collection_id: base.id})
                 db.session.commit()
             except Exception:
                 db.session.rollback()
     except Exception:
-        # best-effort; continue
+        # по возможности продолжаем дальше
         pass
 
-# ------------------- Path Safety Helpers -------------------
+# ------------------- Вспомогательные функции безопасности путей -------------------
 def _resolve_under_base(rel_path: str) -> tuple[Path, Path | None]:
-    """Resolve rel_path under UPLOAD_FOLDER safely. Returns (base_dir, abs_path or None if outside)."""
+    """Безопасно разрешать rel_path внутри UPLOAD_FOLDER. Возвращает (base_dir, abs_path или None, если путь вне папки)."""
     base_dir = Path(app.config.get('UPLOAD_FOLDER') or '.').resolve()
     try:
-        # Normalize separators and strip leading slashes
+        # Нормализовать разделители и убрать ведущие слэши
         rel = str(rel_path).replace('\\', '/').lstrip('/')
         abs_path = (base_dir / rel).resolve()
         abs_path.relative_to(base_dir)
@@ -1500,7 +1533,7 @@ def _force_utf8(resp):
         if ct.startswith('text/html'):
             resp.headers['Content-Type'] = 'text/html; charset=utf-8'
         elif ct.startswith('application/json'):
-            # ensure utf-8 for JSON too
+            # обеспечить кодировку utf-8 и для JSON
             resp.headers['Content-Type'] = 'application/json; charset=utf-8'
         return resp
     except Exception:
@@ -1577,7 +1610,7 @@ def upload_file():
         col = Collection.query.filter_by(slug='base').first() or Collection.query.first()
     if col:
         if allowed is not None and col.id not in allowed:
-            allowed = None  # allow fallthrough to write check
+            allowed = None  # позволяем перейти к проверке права записи
         if not _has_collection_access(col.id, write=True):
             abort(403)
 
@@ -1813,7 +1846,7 @@ def import_files():
 @app.route("/download/<path:rel_path>")
 def download_file(rel_path):
     base_dir, abs_path = _resolve_under_base(rel_path)
-    # Try to resolve DB record early and provide a fallback if file was moved
+    # Пытаемся заранее найти запись в БД и подготовить резерв, если файл переместили
     try:
         rp = str(rel_path)
         rp_alt = rp.replace('/', '\\') if ('/' in rp) else rp.replace('\\', '/')
@@ -1844,10 +1877,10 @@ def download_file(rel_path):
                         db.session.commit()
                     except Exception:
                         db.session.rollback()
-                    # update rel_path for downstream URLs
+                    # обновляем rel_path для дальнейших URL
                     rel_path = f.rel_path
                     break
-            # As a last resort, search by filename across base_dir (can be slow)
+            # В крайнем случае ищем по имени файла во всём base_dir (может быть медленно)
             if not (abs_path and abs_path.exists()):
                 try:
                     for cand in base_dir.rglob(filename_only):
@@ -1878,7 +1911,7 @@ def media_file(rel_path):
     """Отдавать файл встраиваемо (для аудиоплеера в предпросмотре), без принудительного скачивания."""
     base_dir, abs_path = _resolve_under_base(rel_path)
     if abs_path is None or not abs_path.exists():
-        # Inline 404 keeps iframe/player flow simple
+        # Встроенный 404 упрощает работу iframe/плеера
         return ("Not Found", 404)
     return send_from_directory(str(base_dir), str(Path(rel_path).as_posix()), as_attachment=False)
 
@@ -1929,7 +1962,7 @@ def preview_file(rel_path):
         # Кэш‑каталог для текстовых фрагментов
         cache_dir = Path(app.static_folder) / 'cache' / 'text_excerpts'
         cache_dir.mkdir(parents=True, exist_ok=True)
-        # key by sha1 when possible
+        # по возможности используем sha1 в качестве ключа
         sha = None
         try:
             import hashlib
@@ -1955,7 +1988,7 @@ def preview_file(rel_path):
                 content = extract_text_djvu(abs_path, limit_chars=4000)
             elif is_text:
                 content = abs_path.read_text(encoding='utf-8', errors='ignore')[:4000]
-            # for audio, prefer DB fields later
+            # для аудио позднее предпочтём данные из БД
             try:
                 cache_file.write_text(content, encoding='utf-8')
             except Exception:
@@ -1964,7 +1997,7 @@ def preview_file(rel_path):
         content = ''
 
     # Пробуем найти запись File, чтобы получить id для ссылки «Подробнее» и ключевые слова
-    # Resolve DB record by rel_path; handle slash/backslash differences (Windows)
+    # Находим запись в БД по rel_path; учитываем различия слэшей/обратных слэшей (Windows)
     rp = str(rel_path)
     rp_alt = rp.replace('/', '\\') if ('/' in rp) else rp.replace('\\', '/')
     f = File.query.filter(or_(File.rel_path == rp, File.rel_path == rp_alt)).first()
@@ -1973,11 +2006,11 @@ def preview_file(rel_path):
     if f and (is_audio or (f.material_type or '') == 'audio'):
         is_audio = True
         abstract = (f.abstract or '')
-        # If no cached content, use transcript excerpt from DB
+        # Если нет кэша, берём фрагмент транскрипта из БД
         if not content:
             content = (f.text_excerpt or '')[:4000]
-        # audio player points to download endpoint
-        # use URL-friendly rel path (forward slashes)
+        # аудиоплеер ссылается на endpoint скачивания
+        # используем rel_path с прямыми слэшами для URL
         audio_url = url_for('media_file', rel_path=str(rel_path).replace('\\','/'))
         try:
             duration = audio_duration_hhmmss(abs_path)
@@ -2056,7 +2089,7 @@ def extract_text_pdf(fp: Path, limit_chars=40000, force_ocr_first_page: bool = F
         # Попробуем первые N страниц улучшить OCR-ом, если обычный текст слишком скуден
         for idx, page in enumerate(doc):
             raw = page.get_text("text") or ""
-            # For dissertations we may want to OCR the first page regardless
+            # Для диссертаций может потребоваться OCR первой страницы независимо от настроек
             if idx == 0 and force_ocr_first_page and pytesseract is not None:
                 try:
                     t0 = _time.time()
@@ -2066,7 +2099,7 @@ def extract_text_pdf(fp: Path, limit_chars=40000, force_ocr_first_page: bool = F
                         pix.save(tf.name)
                         ocr = pytesseract.image_to_string(tf.name, lang=os.getenv('OCR_LANGS', 'rus+eng'))
                         if (ocr or '').strip():
-                            # if there is some native text, prepend OCR; otherwise replace
+                            # если есть оригинальный текст, добавляем OCR в начало; иначе заменяем
                             if len((raw or '').strip()) < 200:
                                 raw = (ocr or '')
                             else:
@@ -2075,7 +2108,7 @@ def extract_text_pdf(fp: Path, limit_chars=40000, force_ocr_first_page: bool = F
                     ocr_time_total += (_time.time() - t0)
                 except Exception as oe:
                     app.logger.info(f"OCR(first page) failed for {fp}: {oe}")
-            # Heuristic OCR for first N pages when native text is too short
+            # Эвристический OCR первых N страниц, когда исходный текст слишком короткий
             if idx < max_ocr_pages and pytesseract is not None and len((raw or '').strip()) < 30:
                 try:
                     t0 = _time.time()
@@ -2094,14 +2127,14 @@ def extract_text_pdf(fp: Path, limit_chars=40000, force_ocr_first_page: bool = F
             if sum(len(x) for x in text_parts) >= limit_chars:
                 break
         text = "\n".join(text_parts)
-        # Heuristic: detect "garbled" text (copy-protection/invalid glyph maps) and fallback to OCR
+        # Эвристика: выявляем «кашу» в тексте (защита от копирования/битые глифы) и переходим к OCR
         try:
             def _ratio_latin_cyr(s: str) -> float:
                 if not s:
                     return 0.0
                 good = sum(1 for ch in s if ('a' <= ch.lower() <= 'z') or ('а' <= ch.lower() <= 'я') or (ch in 'ёЁ'))
                 return good / max(1, len(s))
-            # very low proportion of latin/cyr letters and text contains many symbols
+            # очень мало латинских/кириллических букв и много символов
             rat = _ratio_latin_cyr(text)
             if len(text) >= 400 and rat < 0.15 and pytesseract is not None:
                 tstart = _time.time()
@@ -2126,7 +2159,7 @@ def extract_text_pdf(fp: Path, limit_chars=40000, force_ocr_first_page: bool = F
                         pass
         except Exception:
             pass
-        # Fallback: если и после прохода текст совсем короткий — OCR до 5 страниц без условия длины
+        # Резервный проход: если после обработки текст остаётся коротким — выполняем OCR до 5 страниц без условия длины
         if len(text.strip()) < 200 and pytesseract is not None:
             try:
                 tstart = _time.time()
@@ -2298,9 +2331,6 @@ def transcribe_audio(fp: Path, limit_chars=40000,
     return ""
 
 def call_lmstudio_summarize(text: str, filename: str) -> str:
-    base_url, model_name, api_key = _select_llm_endpoint('summary')
-    if not base_url:
-        return ""
     text = (text or "")[: int(os.getenv("SUMMARY_TEXT_LIMIT", "12000"))]
     if not text:
         return ""
@@ -2309,33 +2339,51 @@ def call_lmstudio_summarize(text: str, filename: str) -> str:
         "выделив тему, основные тезисы и вывод."
     )
     user = f"Файл: {filename}\nСтенограмма:\n{text}"
-    try:
-        base = base_url.rstrip('/')
-        url = base + "/chat/completions" if not base.endswith("/chat/completions") else base
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        payload = {"model": model_name, "messages": [{"role":"system","content":system},{"role":"user","content":user}], "temperature": 0.2, "max_tokens": 400, "top_p": 1.0}
-        r = requests.post(url, headers=headers, json=payload, timeout=120)
-        r.raise_for_status()
-        data = r.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    except Exception as e:
-        app.logger.warning(f"Суммаризация не удалась: {e}")
-        return ""
+    last_error: Exception | None = None
+    for choice in _llm_iter_choices('summary'):
+        label = _llm_choice_label(choice)
+        url = _llm_choice_url(choice)
+        if not url:
+            app.logger.warning(f"Суммаризация не удалась ({label}): пустой URL конечной точки")
+            continue
+        payload = {
+            "model": choice.get('model') or LMSTUDIO_MODEL,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.2,
+            "max_tokens": 400,
+            "top_p": 1.0,
+        }
+        try:
+            r = requests.post(url, headers=_llm_choice_headers(choice), json=payload, timeout=120)
+            if _llm_response_indicates_busy(r):
+                app.logger.info(f"LLM summary endpoint занята ({label}), переключаемся")
+                last_error = RuntimeError('busy')
+                continue
+            r.raise_for_status()
+            data = r.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if content:
+                return content
+        except Exception as e:
+            last_error = e
+            app.logger.warning(f"Суммаризация не удалась ({label}): {e}")
+    if last_error and str(last_error) != 'busy':
+        app.logger.warning(f"Суммаризация не удалась: {last_error}")
+    return ""
 
 def call_lmstudio_compose(system: str, user: str, *, temperature: float = 0.2, max_tokens: int = 400) -> str:
-    base_url, model_name, api_key = _select_llm_endpoint('compose')
-    if not base_url:
-        return ""
-    try:
-        base = base_url.rstrip('/')
-        url = base + "/chat/completions" if not base.endswith("/chat/completions") else base
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+    last_error: Exception | None = None
+    for choice in _llm_iter_choices('compose'):
+        label = _llm_choice_label(choice)
+        url = _llm_choice_url(choice)
+        if not url:
+            app.logger.warning(f"Compose LLM endpoint некорректен ({label}): пустой URL")
+            continue
         payload = {
-            "model": model_name,
+            "model": choice.get('model') or LMSTUDIO_MODEL,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -2344,38 +2392,43 @@ def call_lmstudio_compose(system: str, user: str, *, temperature: float = 0.2, m
             "max_tokens": int(max_tokens),
             "top_p": 1.0,
         }
-        r = requests.post(url, headers=headers, json=payload, timeout=120)
-        r.raise_for_status()
-        data = r.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    except Exception as e:
-        app.logger.warning(f"LM Studio compose failed: {e}")
-        return ""
+        try:
+            r = requests.post(url, headers=_llm_choice_headers(choice), json=payload, timeout=120)
+            if _llm_response_indicates_busy(r):
+                app.logger.info(f"LLM compose endpoint занята ({label}), переключаемся")
+                last_error = RuntimeError('busy')
+                continue
+            r.raise_for_status()
+            data = r.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if content:
+                return content
+        except Exception as e:
+            last_error = e
+            app.logger.warning(f"LM Studio compose failed ({label}): {e}")
+    if last_error and str(last_error) != 'busy':
+        app.logger.warning(f"LM Studio compose failed: {last_error}")
+    return ""
 def call_lmstudio_keywords(text: str, filename: str):
-    """Извлечь короткий список ключевых слов из стенограммы через LM Studio.
-    Быстрое извлечение: низкая температура и лаконичный ответ. Возвращает list[str].
-    """
-    base_url, model_name, api_key = _select_llm_endpoint('keywords')
-    if not base_url:
-        return []
+    """Извлечь короткий список ключевых слов из стенограммы через LM Studio."""
     text = (text or "").strip()
     if not text:
         return []
-    # Ограничим объём стенограммы в запросе
     text = text[:int(os.getenv("KWS_TEXT_LIMIT", "8000"))]
     system = PROMPTS.get('keywords_system') or (
         "Ты извлекаешь ключевые слова из стенограммы аудио. Верни только JSON-массив строк на русском: "
         "[\"ключ1\", \"ключ2\", ...]. Без пояснений, не более 12 слов/фраз."
     )
     user = f"Файл: {filename}\nСтенограмма:\n{text}"
-    try:
-        base = base_url.rstrip('/')
-        url = base + "/chat/completions" if not base.endswith("/chat/completions") else base
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+    last_error: Exception | None = None
+    for choice in _llm_iter_choices('keywords'):
+        label = _llm_choice_label(choice)
+        url = _llm_choice_url(choice)
+        if not url:
+            app.logger.warning(f"LLM keywords endpoint некорректен ({label}): пустой URL")
+            continue
         payload = {
-            "model": model_name,
+            "model": choice.get('model') or LMSTUDIO_MODEL,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -2384,68 +2437,98 @@ def call_lmstudio_keywords(text: str, filename: str):
             "max_tokens": 200,
             "top_p": 1.0,
         }
-        r = requests.post(url, headers=headers, json=payload, timeout=90)
-        r.raise_for_status()
-        data = r.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        # Попытка разобрать сразу JSON-массив
         try:
-            obj = json.loads(content)
-            if isinstance(obj, list):
-                return [str(x) for x in obj][:12]
-        except Exception:
-            pass
-        # Попытка достать массив из блока ```json ... ```
-        m = re.search(r"```json\s*(\[.*?\])\s*```", content, flags=re.S)
-        if m:
+            r = requests.post(url, headers=_llm_choice_headers(choice), json=payload, timeout=90)
+            if _llm_response_indicates_busy(r):
+                app.logger.info(f"LLM keywords endpoint занята ({label}), переключаемся")
+                last_error = RuntimeError('busy')
+                continue
+            r.raise_for_status()
+            data = r.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             try:
-                obj = json.loads(m.group(1))
+                obj = json.loads(content)
                 if isinstance(obj, list):
                     return [str(x) for x in obj][:12]
             except Exception:
                 pass
-        # Резерв: разбиение по запятым/точкам с запятой/переносам строк
-        rough = re.split(r"[\n;,]", content)
-        res = [w.strip(" \t\r\n-•") for w in rough if w.strip()]
-        return res[:12]
-    except Exception as e:
-        app.logger.warning(f"Извлечение ключевых слов (LLM) не удалось: {e}")
-        return []
+            m = re.search(r"```json\s*(\[.*?\])\s*```", content, flags=re.S)
+            if m:
+                try:
+                    obj = json.loads(m.group(1))
+                    if isinstance(obj, list):
+                        return [str(x) for x in obj][:12]
+                except Exception:
+                    pass
+            rough = re.split(r"[\n;,]", content)
+            res = [w.strip(" \t\r\n-•") for w in rough if w.strip()]
+            if res:
+                return res[:12]
+        except Exception as e:
+            last_error = e
+            app.logger.warning(f"Извлечение ключевых слов (LLM) не удалось ({label}): {e}")
+    if last_error and str(last_error) != 'busy':
+        app.logger.warning(f"Извлечение ключевых слов (LLM) не удалось: {last_error}")
+    return []
 
 def call_lmstudio_vision(image_path: Path, filename: str):
-    """Распознавание и описание изображения через LM Studio (совместимый с OpenAI Vision).
-    Возвращает dict: { description: str, keywords: list[str] }.
-    Используем base64 data URL, чтобы не требовать внешний HTTP‑доступ.
-    """
+    """Распознавание и описание изображения через LM Studio (совместимый с OpenAI Vision)."""
     try:
-        base_url, model_name, api_key = _select_llm_endpoint('vision')
-        if not base_url:
-            return {}
         import base64
-        mime = "image/png"
-        suf = image_path.suffix.lower()
-        if suf in (".jpg", ".jpeg"): mime = "image/jpeg"
-        elif suf in (".webp",): mime = "image/webp"
-        elif suf in (".bmp",): mime = "image/bmp"
-        elif suf in (".tif", ".tiff"): mime = "image/tiff"
-        raw = image_path.read_bytes()
-        data_url = f"data:{mime};base64," + base64.b64encode(raw).decode('ascii')
+    except Exception as e:
+        app.logger.warning(f"Визуальное распознавание недоступно: {e}")
+        return {}
 
-        system = PROMPTS.get('vision_system') or (
-            "Ты помощник по анализу изображений. Опиши изображение 2–4 предложениями на русском и верни 5–12 ключевых слов. "
-            "Верни строго JSON: {\\\"description\\\":\\\"...\\\", \\\"keywords\\\":[\\\"...\\\"]}."
-        )
-        user_content = [
-            {"type": "text", "text": f"Файл: {filename}. Опиши и укажи ключевые слова."},
-            {"type": "image_url", "image_url": {"url": data_url}},
-        ]
-        base = base_url.rstrip('/')
-        url = base + "/chat/completions" if not base.endswith("/chat/completions") else base
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+    mime = "image/png"
+    suf = image_path.suffix.lower()
+    if suf in (".jpg", ".jpeg"):
+        mime = "image/jpeg"
+    elif suf in (".webp",):
+        mime = "image/webp"
+    elif suf in (".bmp",):
+        mime = "image/bmp"
+    elif suf in (".tif", ".tiff"):
+        mime = "image/tiff"
+    try:
+        raw = image_path.read_bytes()
+    except Exception as e:
+        app.logger.warning(f"Визуальное распознавание: не удалось прочитать файл {image_path}: {e}")
+        return {}
+    data_url = f"data:{mime};base64," + base64.b64encode(raw).decode('ascii')
+
+    system = PROMPTS.get('vision_system') or (
+        "Ты помощник по анализу изображений. Опиши изображение 2–4 предложениями на русском и верни 5–12 ключевых слов. "
+        "Верни строго JSON: {\\\"description\\\":\\\"...\\\", \\\"keywords\\\":[\\\"...\\\"]}."
+    )
+    user_content = [
+        {"type": "text", "text": f"Файл: {filename}. Опиши и укажи ключевые слова."},
+        {"type": "image_url", "image_url": {"url": data_url}},
+    ]
+
+    def _extract_kws_from_text(txt: str):
+        try:
+            t = (txt or '').replace('*', ' ')
+            m = re.search(r"(?i)ключ[^\n\r:]*?:\s*(.+)", t)
+            if m:
+                line = m.group(1).strip()
+                line = re.split(r"\n|\r|\u2028|\u2029|\s{2,}", line)[0]
+                parts = [p.strip(" \t\r\n,.;·•-") for p in line.split(',')]
+                parts = [p for p in parts if p]
+                cleaned = re.sub(r"(?i)ключ[^\n\r:]*?:.*", "", t)
+                return parts[:16], cleaned.strip()
+        except Exception:
+            return [], txt
+        return [], txt
+
+    last_error: Exception | None = None
+    for choice in _llm_iter_choices('vision'):
+        label = _llm_choice_label(choice)
+        url = _llm_choice_url(choice)
+        if not url:
+            app.logger.warning(f"LLM vision endpoint некорректен ({label}): пустой URL")
+            continue
         payload = {
-            "model": model_name,
+            "model": choice.get('model') or LMSTUDIO_MODEL,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_content},
@@ -2454,47 +2537,17 @@ def call_lmstudio_vision(image_path: Path, filename: str):
             "max_tokens": 500,
             "top_p": 1.0,
         }
-        r = requests.post(url, headers=headers, json=payload, timeout=180)
-        r.raise_for_status()
-        data = r.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        # вспомогательная: извлечь ключевые слова из свободного текста
-        def _extract_kws_from_text(txt: str):
-            try:
-                t = (txt or '').replace('*', ' ')
-                m = re.search(r"(?i)ключ[^\n\r:]*?:\s*(.+)", t)
-                if m:
-                    line = m.group(1).strip()
-                    # обрезаем по переносам/двум пробелам/двум точкам
-                    line = re.split(r"\n|\r|\u2028|\u2029|\s{2,}", line)[0]
-                    parts = [p.strip(" \t\r\n,.;·•-") for p in line.split(',')]
-                    parts = [p for p in parts if p]
-                    # вырежем блок из описания
-                    cleaned = re.sub(r"(?i)ключ[^\n\r:]*?:.*", "", t)
-                    return parts[:16], cleaned.strip()
-            except Exception:
-                return [], txt
-            return [], txt
         try:
-            obj = json.loads(content)
-            if isinstance(obj, dict):
-                # нормализуем keywords
-                kws_list = obj.get("keywords") if isinstance(obj.get("keywords"), list) else []
-                if not kws_list:
-                    # попробуем вытащить из description
-                    kws_list, cleaned = _extract_kws_from_text(obj.get("description") or "")
-                    if kws_list:
-                        obj["description"] = cleaned
-                        obj["keywords"] = kws_list
-                if "keywords" in obj and isinstance(obj["keywords"], list):
-                    obj["keywords"] = [str(x) for x in obj["keywords"]][:16]
-                return obj
-        except Exception:
-            pass
-        m = re.search(r"```json\s*(\{.*?\})\s*```", content, flags=re.S)
-        if m:
+            r = requests.post(url, headers=_llm_choice_headers(choice), json=payload, timeout=180)
+            if _llm_response_indicates_busy(r):
+                app.logger.info(f"LLM vision endpoint занята ({label}), переключаемся")
+                last_error = RuntimeError('busy')
+                continue
+            r.raise_for_status()
+            data = r.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             try:
-                obj = json.loads(m.group(1))
+                obj = json.loads(content)
                 if isinstance(obj, dict):
                     kws_list = obj.get("keywords") if isinstance(obj.get("keywords"), list) else []
                     if not kws_list:
@@ -2507,22 +2560,36 @@ def call_lmstudio_vision(image_path: Path, filename: str):
                     return obj
             except Exception:
                 pass
-        # Фолбэк: описание из текста + ключевые слова по шаблону "Ключевые слова: ..."
-        kws_guess, cleaned = _extract_kws_from_text(content or '')
-        return {"description": cleaned.strip()[:2000], "keywords": kws_guess}
-    except Exception as e:
-        app.logger.warning(f"Визуальное распознавание не удалось: {e}")
-        return {}
+            m = re.search(r"```json\s*(\{.*?\})\s*```", content, flags=re.S)
+            if m:
+                try:
+                    obj = json.loads(m.group(1))
+                    if isinstance(obj, dict):
+                        kws_list = obj.get("keywords") if isinstance(obj.get("keywords"), list) else []
+                        if not kws_list:
+                            kws_list, cleaned = _extract_kws_from_text(obj.get("description") or "")
+                            if kws_list:
+                                obj["description"] = cleaned
+                                obj["keywords"] = kws_list
+                        if "keywords" in obj and isinstance(obj["keywords"], list):
+                            obj["keywords"] = [str(x) for x in obj["keywords"]][:16]
+                        return obj
+                except Exception:
+                    pass
+            kws_guess, cleaned = _extract_kws_from_text(content or '')
+            return {"description": cleaned.strip()[:2000], "keywords": kws_guess}
+        except Exception as e:
+            last_error = e
+            app.logger.warning(f"Визуальное распознавание не удалось ({label}): {e}")
+    if last_error and str(last_error) != 'busy':
+        app.logger.warning(f"Визуальное распознавание не удалось: {last_error}")
+    return {}
 
 def call_lmstudio_for_metadata(text: str, filename: str):
     """
     Вызов OpenAI-совместимого API (LM Studio) для извлечения метаданных.
     Возвращает dict. Терпимо относится к не-JSON ответам: пытается вытащить из ```json ...``` блока.
     """
-    base_url, model_name, api_key = _select_llm_endpoint('metadata')
-    if not base_url:
-        return {}
-
     text = (text or "")[: int(os.getenv("LLM_TEXT_LIMIT", "15000"))]
 
     system = PROMPTS.get('metadata_system') or (
@@ -2533,79 +2600,83 @@ def call_lmstudio_for_metadata(text: str, filename: str):
     )
     user = f"Файл: {filename}\nФрагмент текста:\n{text}"
 
-    base = base_url.rstrip("/")
-    url = base + "/chat/completions" if not base.endswith("/chat/completions") else base
-
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    payload = {
-        "model": model_name,
+    payload_template = {
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
         "temperature": 0.0,
         "max_tokens": 800,
-        "top_p": 1.0
-        # Важное: без response_format — многие локальные серверы его не понимают
+        "top_p": 1.0,
     }
 
-    # Добавим простой retry с экспоненциальной задержкой и расширенным логированием
-    max_retries = 3
-    backoff = 1.0
-    for attempt in range(1, max_retries + 1):
-        try:
-            r = requests.post(url, headers=headers, json=payload, timeout=120)
-            # Логируем статус и короткий фрагмент тела для диагностики
-            text_snippet = (r.text or '')[:2000]
-            if r.status_code != 200:
-                app.logger.warning(f"LM Studio HTTP {r.status_code} (попытка {attempt}): {text_snippet}")
-                r.raise_for_status()
-            data = r.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    last_error: Exception | None = None
+    for choice in _llm_iter_choices('metadata'):
+        label = _llm_choice_label(choice)
+        url = _llm_choice_url(choice)
+        if not url:
+            app.logger.warning(f"LLM metadata endpoint некорректен ({label}): пустой URL")
+            continue
+        payload = dict(payload_template)
+        payload["model"] = choice.get('model') or LMSTUDIO_MODEL
+        headers = _llm_choice_headers(choice)
 
-            # Попробуем сразу JSON
+        max_retries = 3
+        backoff = 1.0
+        busy = False
+        for attempt in range(1, max_retries + 1):
             try:
-                return json.loads(content)
-            except Exception:
-                pass
-
-            # Попробуем из блока ```json ... ```
-            m = re.search(r"```json\s*(\{.*?\})\s*```", content, flags=re.S)
-            if m:
+                r = requests.post(url, headers=headers, json=payload, timeout=120)
+                if _llm_response_indicates_busy(r):
+                    app.logger.info(f"LLM metadata endpoint занята ({label}), переключаемся")
+                    busy = True
+                    last_error = RuntimeError('busy')
+                    break
+                text_snippet = (r.text or '')[:2000]
+                if r.status_code != 200:
+                    app.logger.warning(f"LM Studio HTTP {r.status_code} ({label}, попытка {attempt}): {text_snippet}")
+                    r.raise_for_status()
+                data = r.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 try:
-                    return json.loads(m.group(1))
+                    return json.loads(content)
                 except Exception:
-                    app.logger.warning("Не удалось разобрать JSON внутри блока ```json из LM Studio")
-
-            # Попробуем от первой фигурной скобки
-            m = re.search(r"(\{.*\})", content, flags=re.S)
-            if m:
-                try:
-                    return json.loads(m.group(1))
-                except Exception:
-                    app.logger.warning("Не удалось разобрать JSON‑фрагмент из ответа LM Studio")
-
-            app.logger.warning(f"LLM вернул не‑JSON контент (первые 300 символов): {content[:300]}")
-            return {}
-
-        except requests.exceptions.RequestException as e:
-            app.logger.warning(f"Исключение при запросе к LM Studio (попытка {attempt}): {e}")
-            if attempt < max_retries:
-                import time
-                time.sleep(backoff)
-                backoff *= 2
-                continue
-            return {}
-        except ValueError as e:
-            # Ошибка парсинга JSON ответа
-            app.logger.warning(f"LM Studio returned invalid JSON (attempt {attempt}): {e}")
-            return {}
-        except Exception as e:
-            app.logger.warning(f"Unexpected error calling LM Studio (attempt {attempt}): {e}")
-            return {}
+                    pass
+                m = re.search(r"```json\s*(\{.*?\})\s*```", content, flags=re.S)
+                if m:
+                    try:
+                        return json.loads(m.group(1))
+                    except Exception:
+                        app.logger.warning("Не удалось разобрать JSON внутри блока ```json из LM Studio")
+                m = re.search(r"(\{.*\})", content, flags=re.S)
+                if m:
+                    try:
+                        return json.loads(m.group(1))
+                    except Exception:
+                        app.logger.warning("Не удалось разобрать JSON‑фрагмент из ответа LM Studio")
+                app.logger.warning(f"LLM вернул не‑JSON контент ({label}, первые 300 символов): {content[:300]}")
+                return {}
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                app.logger.warning(f"Исключение при запросе к LM Studio ({label}, попытка {attempt}): {e}")
+                if attempt < max_retries:
+                    import time
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+            except ValueError as e:
+                app.logger.warning(f"LM Studio вернул неверный JSON ({label}, попытка {attempt}): {e}")
+                last_error = e
+                break
+            except Exception as e:
+                app.logger.warning(f"Unexpected error calling LM Studio ({label}, попытка {attempt}): {e}")
+                last_error = e
+                break
+        if busy:
+            continue
+    if last_error and str(last_error) != 'busy':
+        app.logger.warning(f"Метаданные через LLM не получены: {last_error}")
+    return {}
 
 def upsert_tag(file_obj: File, key: str, value: str):
     key = (key or "").strip()
@@ -2662,10 +2733,10 @@ def normalize_material_type(s: str) -> str:
         'document': 'document', 'документ': 'document',
         'image': 'image', 'изображение':'image', 'картинка':'image'
     }
-    # try direct mapping
+    # пытаемся найти прямое соответствие
     if s in mapping:
         return mapping[s]
-    # partial matches
+    # частичные совпадения
     for k, v in mapping.items():
         if k in s:
             return v
@@ -2684,29 +2755,29 @@ def guess_material_type(ext: str, text_excerpt: str, filename: str = "") -> str:
     # Статья / журнал / тезисы
     if any(k in tl for k in ["статья", "журнал", "doi", "удк", "тезисы", "материалы конференц"]):
         return "article"
-    # Additional types
-    # Monograph
+    # Дополнительные типы
+    # Монография
     if any(k in tl for k in ["монография", "monograph"]):
         return "monograph"
-    # Standards (ГОСТ/ISO/IEC/СТО/СП/СанПиН/ТУ)
+    # Стандарты (ГОСТ/ISO/IEC/СТО/СП/СанПиН/ТУ)
     if any(k in tl for k in ["гост", "gost", "iso", "iec", "стб", "сто ", " санпин", " сп ", "ту "]):
         return "standard"
-    # Proceedings / conference
+    # Материалы конференций
     if any(k in tl for k in ["материалы конференции", "сборник трудов", "proceedings", "conference", "symposium", "workshop"]):
         return "proceedings"
-    # Patent
+    # Патент
     if any(k in tl for k in ["патент", "patent", "mpk", "ipc"]):
         return "patent"
-    # Report / internal docs
+    # Отчёт / внутренние документы
     if any(k in tl for k in ["отчет", "отчёт", "техническое задание", "пояснительная записка", "technical specification"]):
         return "report"
-    # Presentation
+    # Презентация
     if any(k in tl for k in ["презентация", "slides", "powerpoint", "слайды"]):
         return "presentation"
     # Монография
     if "монограф" in tl:
         return "monograph"
-    # Note
+    # Заметка
     if ext in {".md", ".txt"}:
         return "note"
     return "document"
@@ -2714,7 +2785,7 @@ def guess_material_type(ext: str, text_excerpt: str, filename: str = "") -> str:
 def _detect_type_pre_llm(ext: str, text_excerpt: str, filename: str) -> str | None:
     flow = [p.strip() for p in (TYPE_DETECT_FLOW or '').split(',') if p.strip()]
     ext = (ext or '').lower()
-    # filename-based guess helper and conflict resolver
+    # вспомогательная функция для предположений по имени файла и разрешения конфликтов
     def _guess_from_filename(fn: str, ex: str) -> str | None:
         fl = (fn or '').lower()
         if not fl:
@@ -2753,7 +2824,7 @@ def _detect_type_pre_llm(ext: str, text_excerpt: str, filename: str) -> str | No
             return 'image'
         if ext in AUDIO_EXTS:
             return 'audio'
-    # filename-based cues before heuristics
+    # подсказки по имени файла до применения эвристик
     if 'filename' in flow:
         ft = _guess_from_filename(filename, ext)
         if ft and ft != 'document':
@@ -2783,8 +2854,8 @@ def extract_tags_for_type(material_type: str, text: str, filename: str = "") -> 
     t = (text or "")
     tl = t.lower()
     tags = {}
-    # General
-    # Language guess (rough): Cyrillic vs Latin share
+    # Общие сведения
+    # Приблизительная оценка языка: доля кириллицы против латиницы
     try:
         cyr = sum(1 for ch in t if ('а' <= ch.lower() <= 'я') or (ch in 'ёЁ'))
         lat = sum(1 for ch in t if 'a' <= ch.lower() <= 'z')
@@ -2792,13 +2863,13 @@ def extract_tags_for_type(material_type: str, text: str, filename: str = "") -> 
             tags.setdefault('lang', 'ru' if cyr >= lat else 'en')
     except Exception:
         pass
-    # Common identifiers
+    # Распространённые идентификаторы
     # Общие
-    # DOI
+    # DOI (цифровой идентификатор объекта)
     m = re.search(r"\b(10\.\d{4,9}\/[\w\-\.:;()\/[\]A-Za-z0-9]+)", t)
     if m:
         tags.setdefault("doi", m.group(1))
-    # ISBN
+    # ISBN (международный книжный номер)
     m = re.search(r"\bISBN[:\s]*([0-9\- ]{10,20})", t, flags=re.I)
     if m:
         tags.setdefault("isbn", m.group(1).strip())
@@ -2963,13 +3034,13 @@ def aiword_index():
     except Exception:
         return send_file(str(idx))
 
-    # Rewrite absolute asset links to /aiword/assets
+    # Переписываем абсолютные ссылки на ресурсы в /aiword/assets
     html = html.replace('src="/assets/', 'src="/aiword/assets/')
     html = html.replace('href="/assets/', 'href="/aiword/assets/')
-    # Rewrite vite.svg if referenced
+    # Переписываем vite.svg, если он упоминается
     html = html.replace('href="/vite.svg', 'href="/aiword/vite.svg')
 
-    # Prepare a bootstrap script to preload BibTeX and LM config
+    # Готовим bootstrap-скрипт для предварительной загрузки BibTeX и настроек ЛМ
     lm_base = os.getenv('LMSTUDIO_API_BASE', 'http://localhost:1234/v1')
     lm_model = os.getenv('LMSTUDIO_MODEL', 'google/gemma-3n-e4b')
     bootstrap = f"""
@@ -3005,7 +3076,7 @@ def aiword_index():
     }})();
     </script>
     """
-    # Insert bootstrap before first module script tag if present
+    # Вставляем bootstrap перед первым тегом module-скрипта, если он есть
     marker = '<script type="module"'
     if marker in html:
         html = html.replace(marker, bootstrap + "\n" + marker, 1)
@@ -3037,7 +3108,7 @@ def api_search():
     material_type = request.args.get("type", "").strip()
     tag_filters = request.args.getlist("tag")
 
-    # Optional extra filters (kept backward compatible)
+    # Дополнительные необязательные фильтры (обратная совместимость)
     year_from = (request.args.get("year_from") or "").strip()
     year_to = (request.args.get("year_to") or "").strip()
     size_min = (request.args.get("size_min") or "").strip()
@@ -3174,9 +3245,9 @@ def api_search_v2():
     qx = qx.distinct()
 
     if q and smart:
-        # Server-side morphological filtering with synonyms
+        # Морфологическая фильтрация на сервере с синонимами
         qlem = list(_expand_synonyms(_lemmas(q)))
-        # Limit universe to a reasonable cap for counting, ordered by recency
+        # Ограничиваем выборку разумным числом для подсчёта, упорядоченным по свежести
         cap = 10000
         cand = qx.order_by(File.mtime.desc().nullslast()).limit(cap).all()
         def _match(f: File) -> bool:
@@ -3214,10 +3285,10 @@ def api_settings():
     global OCR_LANGS_CFG, PDF_OCR_PAGES_CFG, ALWAYS_OCR_FIRST_PAGE_DISSERTATION
     global PROMPTS, AI_RERANK_LLM
     if request.method == 'GET':
-        # include collections for React UI
+        # включаем коллекции для интерфейса React
         try:
             cols = Collection.query.order_by(Collection.name.asc()).all()
-            # counts per collection (all files, без фильтра searchable)
+            # количество на коллекцию (все файлы, без фильтра searchable)
             counts = {}
             try:
                 rows = db.session.query(File.collection_id, func.count(File.id)).group_by(File.collection_id).all()
@@ -3305,7 +3376,7 @@ def api_settings():
     IMPORT_SUBDIR = data.get('import_subdir') or IMPORT_SUBDIR
     MOVE_ON_RENAME = bool(data.get('move_on_rename', MOVE_ON_RENAME))
     TYPE_DIRS = data.get('type_dirs') or TYPE_DIRS
-    # OCR options (best-effort in-process override)
+    # Настройки OCR (по возможности подменяем на лету)
     ocr_langs = data.get('ocr_langs')
     if ocr_langs is not None:
         OCR_LANGS_CFG = str(ocr_langs)
@@ -3321,7 +3392,7 @@ def api_settings():
         os.environ['OCR_DISS_FIRST_PAGE'] = '1' if ALWAYS_OCR_FIRST_PAGE_DISSERTATION else '0'
     except Exception:
         pass
-    # prompts update
+    # обновление промптов
     try:
         pr = data.get('prompts')
         if isinstance(pr, dict):
@@ -3410,13 +3481,13 @@ def api_facets():
         except Exception:
             pass
 
-    # Types facet (independent from tag filters)
+    # Фасет типов (независим от фильтров тегов)
     types = db.session.query(File.material_type, func.count(File.id))
     types = types.filter(File.id.in_(base_query.with_entities(File.id)))
     types = types.group_by(File.material_type).all()
     types_facet = [[mt, cnt] for (mt, cnt) in types]
 
-    # Tags facets: for each key present in base universe
+    # Фасеты тегов: по каждому ключу, присутствующему в базовой выборке
     base_ids_subq = base_query.with_entities(File.id).subquery()
     base_keys = [row[0] for row in db.session.query(Tag.key).filter(Tag.file_id.in_(base_ids_subq)).distinct().all()]
     selected = {}
@@ -3460,10 +3531,10 @@ def settings_redirect():
 
 @app.route('/settings/collections', methods=['POST'])
 def settings_collections():
-    # Update flags for existing collections and optionally add a new one
+    # Обновляем флаги у существующих коллекций и при необходимости добавляем новую
     try:
         cols = Collection.query.all()
-        # update flags
+        # обновляем флаги
         for c in cols:
             s_key = f'search_{c.id}'
             g_key = f'graph_{c.id}'
@@ -3484,7 +3555,7 @@ def settings_collections():
 @app.route('/admin/backup-db', methods=['POST'])
 @require_admin
 def backup_db():
-    # Create and send a timestamped backup of the SQLite DB
+    # Создаём и отправляем резервную копию SQLite с отметкой времени
     try:
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         src = BASE_DIR / 'catalogue.db'
@@ -3502,13 +3573,13 @@ def backup_db():
 @app.route('/admin/clear-db', methods=['POST'])
 @require_admin
 def clear_db():
-    # Danger: delete all records from main tables
+    # Опасно: удалить все записи из основных таблиц
     try:
         Tag.query.delete()
         ChangeLog.query.delete()
         File.query.delete()
         db.session.commit()
-        # purge static caches (text excerpts + thumbnails)
+        # очищаем статические кэши (текстовые фрагменты и миниатюры)
         try:
             static_dir = Path(app.static_folder)
             txt_cache = static_dir / 'cache' / 'text_excerpts'
@@ -3568,7 +3639,7 @@ def import_db():
         tmp = BASE_DIR / f'.upload_import_tmp_{os.getpid()}_{int(time.time())}.db'
         file.save(tmp)
 
-        # Schema validation
+        # Проверка схемы
         try:
             con = sqlite3.connect(str(tmp))
             cur = con.cursor()
@@ -3588,7 +3659,7 @@ def import_db():
                 tmp.unlink()
             return json_error(f'Не удалось проверить схему базы: {e}', 500)
 
-        # Ensure SQLAlchemy releases file handles
+        # Убеждаемся, что SQLAlchemy освобождает файловые дескрипторы
         try:
             db.session.close()
             db.session.remove()
@@ -3642,6 +3713,22 @@ def _task_to_dict(task: TaskRecord) -> dict:
     }
 
 
+def _cleanup_old_tasks() -> None:
+    cutoff = datetime.utcnow() - TASK_RETENTION_WINDOW
+    try:
+        deleted = TaskRecord.query.filter(
+            TaskRecord.status.in_(TASK_FINAL_STATUSES),
+            TaskRecord.created_at.isnot(None),
+            TaskRecord.created_at < cutoff
+        ).delete(synchronize_session=False)
+        db.session.commit()
+        if deleted:
+            app.logger.info(f"[tasks] removed {deleted} tasks older than {cutoff.isoformat()} (final statuses)")
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.warning(f"[tasks] cleanup failed: {exc}")
+
+
 @app.route('/api/admin/tasks', methods=['GET'])
 @require_admin
 def api_admin_tasks():
@@ -3650,7 +3737,17 @@ def api_admin_tasks():
     except Exception:
         limit = 50
     limit = max(1, min(limit, 200))
-    tasks = TaskRecord.query.order_by(TaskRecord.created_at.desc()).limit(limit).all()
+    _cleanup_old_tasks()
+    cutoff = datetime.utcnow() - TASK_RETENTION_WINDOW
+    tasks = TaskRecord.query.order_by(TaskRecord.created_at.desc()) \
+        .filter(
+            or_(
+                TaskRecord.status.notin_(TASK_FINAL_STATUSES),
+                TaskRecord.status.is_(None),
+                TaskRecord.created_at.is_(None),
+                TaskRecord.created_at >= cutoff
+            )
+        ).limit(limit).all()
     payload = [_task_to_dict(t) for t in tasks]
     if SCAN_PROGRESS.get('running'):
         progress = 0.0
@@ -3706,9 +3803,31 @@ def api_admin_task_detail(task_id: int):
     return jsonify({'ok': True, 'task': _task_to_dict(task)})
 
 
-@app.route('/api/admin/actions', methods=['GET'])
+@app.route('/api/admin/actions', methods=['GET', 'DELETE'])
 @require_admin
 def api_admin_actions():
+    if request.method == 'DELETE':
+        payload = request.get_json(silent=True) or {}
+        before_raw = str(request.args.get('before') or payload.get('before') or '').strip()
+        if not before_raw:
+            return jsonify({'ok': False, 'error': 'parameter "before" is required'}), 400
+        try:
+            if len(before_raw) <= 10:
+                before_dt = datetime.strptime(before_raw, '%Y-%m-%d') + timedelta(days=1)
+            else:
+                before_dt = datetime.fromisoformat(before_raw)
+        except Exception:
+            return jsonify({'ok': False, 'error': 'invalid datetime format'}), 400
+        try:
+            deleted = UserActionLog.query.filter(UserActionLog.created_at < before_dt).delete(synchronize_session=False)
+            db.session.commit()
+            app.logger.info(f"[actions] deleted {deleted} log records older than {before_dt.isoformat()}")
+            return jsonify({'ok': True, 'deleted': deleted})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.warning(f"[actions] failed to delete logs: {exc}")
+            return jsonify({'ok': False, 'error': 'delete_failed'}), 500
+
     try:
         limit = int(request.args.get('limit', '100'))
     except Exception:
@@ -3892,7 +4011,7 @@ def diag_transcribe():
             }
             mref = fw["model_ref"]
             if mref:
-                # If local directory exists, treat it as resolved
+                # Если локальный каталог существует, считаем путь найденным
                 p = Path(mref).expanduser()
                 if p.exists() and p.is_dir():
                     fw["target_dir"] = str(p)
@@ -3905,7 +4024,7 @@ def diag_transcribe():
                         target_dir = FW_CACHE_DIR / safe_name
                         fw["target_dir"] = str(target_dir)
                         fw["target_exists"] = target_dir.exists() and any(target_dir.iterdir())
-                        # Optional download, even if backend is not currently faster-whisper
+                        # Необязательная загрузка, даже если бэкенд сейчас не faster-whisper
                         if (request.args.get('download') or '').lower() in ('1','true','yes','on'):
                             if hf_snapshot_download is None:
                                 res["warnings"].append("Пакет huggingface_hub не установлен — автозагрузка невозможна")
@@ -3943,7 +4062,7 @@ def diag_transcribe():
             pp = Path(q_path)
             if not pp.is_absolute():
                 root = Path(SCAN_ROOT)
-                # Try common variants to avoid duplicate root folder in the path
+                # Пробуем типовые варианты, чтобы избежать дублирования корневой папки в пути
                 candidates = [
                     root / q_path,
                     root.parent / q_path,
@@ -3968,7 +4087,7 @@ def diag_transcribe():
         if not p:
             return jsonify(res)
 
-        # file meta
+        # метаданные файла
         file_info = {
             "requested": q_path or q_id,
             "path": str(p) if p else None,
@@ -4081,7 +4200,7 @@ def api_stats():
                 from datetime import datetime, timedelta
                 d = datetime.fromtimestamp(f.mtime)
                 months[d.strftime('%Y-%m')] += 1
-                weekdays[d.weekday()] += 1  # Monday=0
+                weekdays[d.weekday()] += 1  # Понедельник=0
                 hours[d.hour] += 1
             except Exception:
                 pass
@@ -4119,7 +4238,7 @@ def api_stats():
         except Exception:
             pass
     # подготовка выходных структур
-    # avg size by type (в МБ, округляем до десятых)
+    # средний размер по типам (в МБ, округляем до десятых)
     avg_size_type = []
     for mt in size_sum_by_type.keys():
         cnt = max(1, size_cnt_by_type[mt])
@@ -4144,7 +4263,7 @@ def api_stats():
         collections_counts = [(name, int(cnt)) for (name, cnt) in q.all()]
     except Exception:
         pass
-    # total size by collection (searchable only)
+    # общий размер по коллекциям (только searchable)
     collections_total_size = []
     try:
         rows = db.session.query(Collection.name, func.coalesce(func.sum(File.size), 0)) \
@@ -4157,7 +4276,7 @@ def api_stats():
     except Exception:
         pass
 
-    # largest files (searchable only)
+    # самые крупные файлы (только searchable)
     largest_files = []
     try:
         rows = db.session.query(File.filename, File.size) \
@@ -4229,7 +4348,7 @@ def graph_redirect():
 @app.cli.command("init-db")
 def init_db():
     db.create_all()
-    # Seed or update TagSchema with known keys (idempotent)
+    # Заполняем или обновляем TagSchema известными ключами (идемпотентно)
     seeds = [
             ("dissertation", "научный руководитель", "ФИО научного руководителя"),
             ("dissertation", "специальность", "Код/направление ВАК"),
@@ -4244,7 +4363,7 @@ def init_db():
             ("monograph", "издательство", "Издательство"),
             ("any", "isbn", "Международный стандартный номер книги"),
         ]
-    # Extend with additional keys for new tag taxonomy
+    # Дополняем дополнительными ключами для новой таксономии тегов
     seeds += [
             ("any", "lang", "Язык текста (ru/en/...)"),
             ("any", "ext", "Расширение файла (без точки)"),
@@ -4301,6 +4420,25 @@ def api_file_refresh(file_id):
         except Exception:
             db.session.rollback()
             refresh_task = None
+    refresh_params = {k: request.args.get(k) for k in ('use_llm', 'kws_audio', 'summarize')}
+    log_detail = {'file_id': file_id, 'params': {k: v for k, v in refresh_params.items() if v is not None}}
+    try:
+        detail_payload = json.dumps(log_detail, ensure_ascii=False)
+    except Exception:
+        detail_payload = str(log_detail)
+    try:
+        _log_user_action(user, 'file_refresh_start', 'file', file_id, detail=detail_payload[:2000])
+    except Exception:
+        pass
+    try:
+        app.logger.info(
+            "[user-action] user=%s action=file_refresh_start file_id=%s params=%s",
+            getattr(user, 'username', None) or 'anonymous',
+            file_id,
+            log_detail.get('params')
+        )
+    except Exception:
+        pass
     log: list[str] = []
     def _log(m: str):
         log.append(m)
@@ -4311,9 +4449,9 @@ def api_file_refresh(file_id):
         ext = p.suffix.lower()
         filename = p.stem
 
-        # purge cached artifacts for this file (thumbnail + text excerpt)
+        # очищаем кэшированные артефакты для этого файла (миниатюра и текстовый фрагмент)
         try:
-            # text excerpt cache
+            # кэш текстового фрагмента
             cache_dir = Path(app.static_folder) / 'cache' / 'text_excerpts'
             key = (f.sha1 or (f.rel_path or '').replace('/', '_')) + '.txt'
             fp = cache_dir / key
@@ -4322,7 +4460,7 @@ def api_file_refresh(file_id):
         except Exception:
             pass
         try:
-            # pdf thumbnail
+            # миниатюра PDF
             if ext == '.pdf':
                 thumb = Path(app.static_folder) / 'thumbnails' / (p.stem + '.png')
                 if thumb.exists():
@@ -4330,7 +4468,7 @@ def api_file_refresh(file_id):
         except Exception:
             pass
 
-        # extract text (always on for refresh)
+        # извлекаем текст (всегда при обновлении)
         text_excerpt = ""
         _log(f"extract: start for {p.name}")
         if ext == ".pdf":
@@ -4349,7 +4487,7 @@ def api_file_refresh(file_id):
         if text_excerpt:
             f.text_excerpt = text_excerpt[:40000]
         _log(f"extract: done chars={len(text_excerpt or '')}")
-        # General tags: ext and PDF pages
+        # Общие теги: расширение и страницы PDF
         try:
             upsert_tag(f, 'ext', ext.lstrip('.'))
         except Exception:
@@ -4361,7 +4499,7 @@ def api_file_refresh(file_id):
             except Exception:
                 pass
 
-        # audio-specific tags
+        # Теги, специфичные для аудио
         if ext in AUDIO_EXTS:
             try:
                 upsert_tag(f, 'формат', ext.lstrip('.'))
@@ -4369,7 +4507,7 @@ def api_file_refresh(file_id):
             except Exception:
                 pass
 
-        # filename heuristics (only fill empty fields)
+        # Эвристики по имени файла (заполняем только пустые поля)
         title = author = year = None
         for pat in FILENAME_PATTERNS:
             m = pat.match(filename)
@@ -4386,7 +4524,7 @@ def api_file_refresh(file_id):
         if year and not f.year:
             f.year = year
 
-        # guess material type if missing; adjust audio
+        # Определяем тип материала, если не указан; корректируем аудио
         if not f.material_type:
             # Явно проставим тип по расширению
             if ext in IMAGE_EXTS:
@@ -4400,7 +4538,7 @@ def api_file_refresh(file_id):
         if ext in IMAGE_EXTS and (f.material_type or '') == 'document':
             f.material_type = 'image'
 
-        # type-specific tags
+        # Теги, зависящие от типа
         try:
             ttags = extract_tags_for_type(f.material_type or '', text_excerpt or '', filename)
             if ttags:
@@ -4410,7 +4548,7 @@ def api_file_refresh(file_id):
             _log(f"type-tags: {len(ttags or {})}")
         except Exception:
             _log("type-tags: error")
-        # extract inline keywords ("Ключевые слова:") if present in text
+        # Извлекаем встроенные ключевые слова («Ключевые слова:»), если есть в тексте
         try:
             import re as _re
             kw_m = _re.search(r"(?:Ключевые\s+слова|Keywords)\s*[:\-]\s*(.+)", (text_excerpt or ''), flags=_re.IGNORECASE)
@@ -4421,7 +4559,7 @@ def api_file_refresh(file_id):
                 _log("inline-keywords: ok")
         except Exception:
             _log("inline-keywords: error")
-        # Additional richer tags
+        # Дополнительные расширенные теги
         try:
             rtags = extract_richer_tags(f.material_type or '', text_excerpt or '', filename)
             if rtags:
@@ -4432,7 +4570,7 @@ def api_file_refresh(file_id):
         except Exception:
             _log("richer-tags: error")
 
-        # optional LLM enrichment per settings or explicit flags
+        # Необязательное обогащение через LLM по настройкам или флагам
         use_llm = (request.args.get('use_llm') in ('1','true','yes','on')) if ('use_llm' in request.args) else DEFAULT_USE_LLM
         do_summarize = (request.args.get('summarize') in ('1','true','yes','on')) if ('summarize' in request.args) else SUMMARIZE_AUDIO
         kws_audio_on = (request.args.get('kws_audio') in ('1','true','yes','on')) if ('kws_audio' in request.args) else AUDIO_KEYWORDS_LLM
@@ -4486,7 +4624,7 @@ def api_file_refresh(file_id):
             else:
                 _log("llm: metadata empty")
 
-        # audio summary and keywords
+        # Резюме и ключевые слова для аудио
         if ext in AUDIO_EXTS:
             if kws_audio_on and (f.text_excerpt or '') and not (f.keywords or '').strip():
                 try:
@@ -4498,7 +4636,7 @@ def api_file_refresh(file_id):
                     _log(f"llm: audio keywords {len(kws or [])}")
                 except Exception:
                     _log("llm: audio keywords error")
-        # vision for images
+        # Анализ изображений (vision)
         if ext in IMAGE_EXTS and IMAGES_VISION_ENABLED:
             try:
                 vis = call_lmstudio_vision(p, p.name)
@@ -4525,7 +4663,7 @@ def api_file_refresh(file_id):
                     _log("llm: summarize error")
 
         db.session.flush()
-        # base tags from fields
+        # Базовые теги из полей
         if f.material_type:
             upsert_tag(f, "тип", f.material_type)
         if f.author:
@@ -4690,7 +4828,7 @@ def api_rename_apply(file_id):
     ext = f.ext or Path(f.path).suffix
     try:
         p_old = Path(f.path)
-        # target directory — by type if enabled, else current parent
+        # целевая директория — по типу, если включено, иначе текущий родитель
         mt = (f.material_type or '').lower().strip()
         target_sub = TYPE_DIRS.get(mt) or TYPE_DIRS.get('other', 'other')
         d = (SCAN_ROOT / target_sub) if MOVE_ON_RENAME else p_old.parent
@@ -4772,6 +4910,16 @@ def _scan_log(msg: str, level: str = "info"):
     if len(SCAN_PROGRESS["history"]) > MAX_LOG_LINES:
         SCAN_PROGRESS["history"] = SCAN_PROGRESS["history"][-MAX_LOG_LINES:]
     SCAN_PROGRESS["updated_at"] = time.time()
+    log_line = f"[scan] {msg}"
+    try:
+        if level == 'error':
+            app.logger.error(log_line)
+        elif level in ('warn', 'warning'):
+            app.logger.warning(log_line)
+        else:
+            app.logger.info(log_line)
+    except Exception:
+        pass
 
 def _update_eta():
     try:
@@ -4823,13 +4971,13 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
             })
             _scan_log("Начало сканирования")
             root = Path(SCAN_ROOT)
-            # determine scan set: explicit targets or full root scan
+            # определяем набор для сканирования: явные цели или полный корневой обход
             if targets:
                 try:
                     file_list = [Path(p) for p in targets]
                 except Exception:
                     file_list = []
-                # filter by allowed and existence
+                # фильтруем по разрешённым путям и наличию
                 file_list = [p for p in file_list if p.exists() and p.suffix.lower() in ALLOWED_EXTS]
                 _scan_log(f"Сканирование только добавленных файлов: {len(file_list)}")
             else:
@@ -4848,7 +4996,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                     db.session.commit()
                 except Exception:
                     db.session.rollback()
-            # resume support: skip first N files if requested
+            # поддержка продолжения: пропускаем первые N файлов, если задано
             skip = max(0, min(int(skip or 0), total))
             if skip:
                 _scan_log(f"Продолжение: пропуск первых {skip} из {total}")
@@ -4881,7 +5029,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                     _scan_log(f"Обработка: {path.name}")
 
                 ext = path.suffix.lower()
-                # compute relative path to SCAN_ROOT when possible
+                # по возможности вычисляем относительный путь к SCAN_ROOT
                 try:
                     rel_path = str(path.relative_to(root))
                 except Exception:
@@ -4908,7 +5056,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                     updated += 1
                     SCAN_PROGRESS["updated"] = updated
 
-                # Text extraction (based on existing logic)
+                # Извлечение текста (на основе текущей логики)
                 text_excerpt = ""
                 if extract_text:
                     if ext == ".pdf":
@@ -4926,7 +5074,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                         text_excerpt = transcribe_audio(path, limit_chars=40000)
                     if text_excerpt:
                         file_obj.text_excerpt = text_excerpt[:40000]
-                    # General tags: extension and PDF pages
+                    # Общие теги: расширение и страницы PDF
                     try:
                         upsert_tag(file_obj, 'ext', ext.lstrip('.'))
                     except Exception:
@@ -4937,14 +5085,14 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                                 upsert_tag(file_obj, 'pages', str(len(_doc)))
                         except Exception:
                             pass
-                    # Audio-specific tags
+                    # Теги, специфичные для аудио
                     if ext in AUDIO_EXTS:
                         try:
                             upsert_tag(file_obj, 'формат', ext.lstrip('.'))
                             upsert_tag(file_obj, 'длительность', audio_duration_hhmmss(path))
                         except Exception:
                             pass
-                        # Lightweight keywords from transcript via LLM
+                        # Лёгкие ключевые слова из транскрипта через LLM
                         try:
                             if AUDIO_KEYWORDS_LLM and (file_obj.text_excerpt or '') and not (file_obj.keywords or '').strip():
                                 kws = call_lmstudio_keywords(file_obj.text_excerpt, path.name)
@@ -4952,7 +5100,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                                     file_obj.keywords = ", ".join(kws)
                         except Exception as _e:
                             _scan_log(f"audio keywords llm failed: {_e}", level="warn")
-                    # Image-specific tags
+                    # Теги, специфичные для изображений
                     if ext in IMAGE_EXTS:
                         try:
                             upsert_tag(file_obj, 'формат', ext.lstrip('.'))
@@ -4964,7 +5112,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                                 upsert_tag(file_obj, 'ориентация', orient)
                         except Exception:
                             pass
-                        # Lightweight keywords from transcript via LLM
+                        # Лёгкие ключевые слова из транскрипта через LLM
                         try:
                             if AUDIO_KEYWORDS_LLM and (file_obj.text_excerpt or '') and not (file_obj.keywords or '').strip():
                                 kws = call_lmstudio_keywords(file_obj.text_excerpt, path.name)
@@ -4973,7 +5121,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                         except Exception as _e:
                             _scan_log(f"audio keywords llm failed: {_e}", level="warn")
 
-                # Inline keywords in text for dissertations/articles
+                # Встроенные ключевые слова в тексте для диссертаций/статей
                 try:
                     import re as _re
                     kw_m = _re.search(r"(?:Ключевые\s+слова|Keywords)\s*[:\-]\s*(.+)", (text_excerpt or ''), flags=_re.IGNORECASE)
@@ -4984,7 +5132,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                 except Exception:
                     pass
 
-                # Filename heuristics
+                # Эвристики на основе имени файла
                 title, author, year = None, None, None
                 for pat in FILENAME_PATTERNS:
                     m = pat.match(filename)
@@ -5020,7 +5168,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                                 upsert_tag(file_obj, k, v)
                     except Exception as e:
                         _scan_log(f"type tags error: {e}", level="warn")
-                    # Additional richer tags
+                    # Дополнительные расширенные теги
                     try:
                         rtags = extract_richer_tags(file_obj.material_type or '', text_excerpt or '', filename)
                         if rtags:
@@ -5030,7 +5178,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                     except Exception as e:
                         _scan_log(f"richer tags error: {e}", level="warn")
 
-                # LLM-добавление (может быть медленным)
+                # Обогащение через LLM (может быть медленным)
                 if use_llm and (text_excerpt or ext in {'.txt', '.md'} or ext in IMAGE_EXTS or ext in {'.pdf','.docx','.rtf','.epub','.djvu'}):
                     SCAN_PROGRESS["stage"] = "llm"
                     SCAN_PROGRESS["updated_at"] = time.time()
@@ -5041,7 +5189,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                             llm_text = Path(path).read_text(encoding="utf-8", errors="ignore")[:15000]
                         except Exception:
                             pass
-                    # Lightweight extraction for common document formats in case extract_text выключен
+                    # Лёгкое извлечение для распространённых форматов документов, если extract_text выключен
                     if not llm_text and ext in {'.pdf','.docx','.rtf','.epub','.djvu'}:
                         try:
                             if ext == '.pdf':
@@ -5096,7 +5244,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                         summ = call_lmstudio_summarize(file_obj.text_excerpt, path.name)
                         if summ:
                             file_obj.abstract = summ[:2000]
-                    # Vision для изображений
+                    # Анализ изображений через Vision
                     if ext in IMAGE_EXTS and IMAGES_VISION_ENABLED:
                         try:
                             vis = call_lmstudio_vision(path, path.name)
@@ -5118,7 +5266,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
                                 upsert_tag(file_obj, k, v)
                     except Exception as e:
                         _scan_log(f"type tags error(2): {e}", level="warn")
-                    # Additional richer tags after LLM
+                    # Добавочные расширенные теги после LLM
                     try:
                         rtags = extract_richer_tags(file_obj.material_type or '', text_excerpt or '', filename)
                         if rtags:
@@ -5187,7 +5335,7 @@ def scan_start():
         skip = int(request.form.get('skip', '0') or 0)
     except Exception:
         skip = 0
-    # Purge static caches before full scan: text excerpts and thumbnails
+    # Очищаем статические кэши перед полным сканом: текстовые фрагменты и миниатюры
     try:
         static_dir = Path(app.static_folder)
         txt_cache = static_dir / 'cache' / 'text_excerpts'
@@ -5250,7 +5398,7 @@ def _ai_expand_keywords(query: str) -> list[str]:
     q = (query or "").strip()
     if not q:
         return []
-    # TTL in minutes; default 20
+    # TTL в минутах; по умолчанию 20
     try:
         ttl_min = int(os.getenv("AI_EXPAND_TTL_MIN", "20") or 20)
     except Exception:
@@ -5260,17 +5408,17 @@ def _ai_expand_keywords(query: str) -> list[str]:
     cached = AI_EXPAND_CACHE.get(key)
     if cached and (now - cached[0]) < ttl_min * 60:
         return cached[1]
-    # Ask LLM for keywords; fallback to simple tokens
+    # Запрашиваем ключевые слова у LLM; при сбое используем простые токены
     kws = []
     try:
         kws = call_lmstudio_keywords(q, "ai-search") or []
     except Exception:
         kws = []
     if not kws:
-        # naive token split fallback
+        # запасной вариант: наивное разделение на токены
         toks = [t.strip() for t in re.split(r"[\s,;]+", q) if t.strip()]
         kws = toks[:12]
-    # de-dup while preserving order
+    # удаляем дубликаты, сохраняя порядок
     seen = set()
     res = []
     for w in kws:
@@ -5284,7 +5432,7 @@ def _ai_expand_keywords(query: str) -> list[str]:
 
 def _read_cached_excerpt_for_file(f: File) -> str:
     try:
-        # Prefer DB excerpt
+        # Предпочитаем фрагмент из базы данных
         if (f.text_excerpt or '').strip():
             return (f.text_excerpt or '')
         cache_dir = Path(app.static_folder) / 'cache' / 'text_excerpts'
@@ -5311,7 +5459,7 @@ def _collect_snippets(text: str, terms: list[str], max_snips: int = 2) -> list[s
         ql = term.lower()
         pos = 0
         found_any = False
-        for _i in range(3):  # up to 3 spots per term
+        for _i in range(3):  # максимум 3 позиционирования на термин
             idx = tl.find(ql, pos)
             if idx < 0:
                 break
@@ -5321,7 +5469,7 @@ def _collect_snippets(text: str, terms: list[str], max_snips: int = 2) -> list[s
             windows.append((start, end))
             pos = idx + len(term)
         if not found_any and len(ql) >= 3:
-            # try split term into sub-words
+            # пытаемся разделить термин на подслова
             for part in re.split(r"[\s\-_/]+", ql):
                 if len(part) < 3:
                     continue
@@ -5330,7 +5478,7 @@ def _collect_snippets(text: str, terms: list[str], max_snips: int = 2) -> list[s
                     start = max(0, idx - 80)
                     end = min(len(t), idx + len(part) + 80)
                     windows.append((start, end))
-    # merge overlapping windows
+    # объединяем перекрывающиеся окна
     windows.sort()
     merged = []
     for w in windows:
@@ -5340,7 +5488,7 @@ def _collect_snippets(text: str, terms: list[str], max_snips: int = 2) -> list[s
             merged[-1][1] = max(merged[-1][1], w[1])
     for a, b in merged[:max_snips]:
         snip = t[a:b]
-        # collapse newlines to keep compact
+        # схлопываем переводы строк для компактности
         snip = re.sub(r"\s+", " ", snip).strip()
         outs.append((a, snip))
     outs.sort(key=lambda x: x[0])
@@ -5471,7 +5619,7 @@ def _deep_scan_file(file_obj: File, terms: list[str], raw_query: str, *, chunk_c
     snippets: list[str] = []
     matched: set[str] = set()
     sources_used: set[str] = set()
-    # Textual extras (transcripts, summaries, captions) from DB/tags
+    # Дополнительные текстовые данные (транскрипты, резюме, подписи) из БД/тегов
     extra_texts: list[tuple[str, str]] = []
     try:
         if (file_obj.text_excerpt or '').strip():
@@ -5513,7 +5661,7 @@ def _deep_scan_file(file_obj: File, terms: list[str], raw_query: str, *, chunk_c
                 break
     except Exception:
         pass
-    # Enrich with extra textual sources when needed (transcripts, captions, summaries)
+    # При необходимости обогащаем дополнительными текстовыми источниками (транскрипты, подписи, резюме)
     if len(snippets) < max_snippets:
         for label, text in extra_texts:
             if not text:
@@ -5544,11 +5692,11 @@ def _deep_scan_file(file_obj: File, terms: list[str], raw_query: str, *, chunk_c
     }
 
 
-# Basic RU/EN stop-words to suppress non-informative tokens for AI search
+# Базовый список русских/английских стоп-слов для исключения неинформативных токенов в ИИ-поиске
 STOP_WORDS = set([
-    # RU pronouns, particles, prepositions, conjunctions, service words
+    # Русские местоимения, частицы, предлоги, союзы, служебные слова
     'и','или','а','но','же','то','ли','не','ни','да','уж','вот','как','так','что','кто','где','когда','зачем','почему','какой','какая','какие','каков','это','эта','этот','эти','того','тому','этом','этих','тех','там','тут','здесь','бы','либо','пусть','дабы','быть','есть','нет','между','через','после','перед','около','возле','у','к','ко','от','до','для','по','под','над','о','об','обо','при','без','из','из‑за','изза','с','со','же','ну','в','во','на','над','ё','же','уж','еще','ещё','также','тоже','сам','сама','сами','само','свой','своя','свои','своё','мой','моя','мои','моё','твой','твоя','твои','твоё','наш','наша','наши','наше','ваш','ваша','ваши','ваше','тот','та','то','те','эт','прочее','другой','другая','другие','иной','иная','иное','иные',
-    # EN
+    # Английские
     'the','a','an','and','or','but','if','then','else','when','where','why','how','what','who','whom','whose','this','that','these','those','is','are','was','were','be','been','being','to','of','in','on','for','with','at','by','from','as','about','into','through','after','over','between','out','against','during','without','before','under','around','among','it','its','we','you','they','he','she','them','his','her','their','our','your','my','me','us','do','does','did','not','no','yes'
 ])
 
@@ -5562,6 +5710,10 @@ class _ProgressLogger:
     def add(self, line: str) -> None:
         text = str(line)
         self.lines.append(text)
+        try:
+            app.logger.info(f"[ai-search] {text}")
+        except Exception:
+            pass
         if self.emitter:
             try:
                 self.emitter(text)
@@ -5579,7 +5731,7 @@ def _format_sse(payload: dict) -> str:
 
 def _tokenize_query(q: str) -> list[str]:
     s = (q or '').lower()
-    # keep letters, digits, hyphen, underscore; split on others
+    # оставляем буквы, цифры, дефис, подчёркивание; разделяем по остальным символам
     parts = re.split(r"[^\w\-]+", s)
     filtered: list[str] = []
     for p in parts:
@@ -5587,14 +5739,14 @@ def _tokenize_query(q: str) -> list[str]:
             continue
         if len(p) < 2:
             continue
-        # drop numbers-only tokens
+        # отбрасываем токены, состоящие только из цифр
         if p.isdigit():
             continue
-        # stop-words
+        # стоп-слова
         if p in STOP_WORDS:
             continue
         filtered.append(p)
-    # de-dup preserve order
+    # удаляем дубликаты, сохраняя порядок
     seen = set()
     out: list[str] = []
     for p in filtered:
@@ -5605,7 +5757,7 @@ def _tokenize_query(q: str) -> list[str]:
 
 
 def _idf_for_terms(terms: list[str]) -> dict[str, float]:
-    # compute document frequencies over union of file fields and tags
+    # вычисляем частоты документов по объединению полей файла и тегов
     idf: dict[str, float] = {}
     try:
         allowed = getattr(g, 'allowed_collection_ids', set())
@@ -5643,9 +5795,9 @@ def _idf_for_terms(terms: list[str]) -> dict[str, float]:
             df = int(q.scalar() or 0)
         except Exception:
             df = 0
-        # add-one smoothing
+        # сглаживание add-one
         val = float((1.0 + (N / (1.0 + df))))
-        # log scale, min 1.0
+        # логарифмическая шкала, минимум 1.0
         try:
             import math
             val = max(1.0, math.log(val + 1.0))
@@ -5678,7 +5830,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
     use_tags = sources.get('tags', True) if isinstance(sources, dict) else True
     use_text = sources.get('text', True) if isinstance(sources, dict) else True
     progress.add(f"Источники: теги {'вкл' if use_tags else 'выкл'}, метаданные {'вкл' if use_text else 'выкл'}")
-    # Optional collection filter (list of ids)
+    # Необязательный фильтр по коллекциям (список id)
     if 'collection_id' in data and 'collection_ids' not in data:
         data['collection_ids'] = [data['collection_id']]
     try:
@@ -5691,29 +5843,29 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
             collection_ids = [cid for cid in collection_ids if cid in allowed]
         else:
             collection_ids = list(allowed)
-    # Optional material types filter (list of strings)
+    # Необязательный фильтр по типам материалов (список строк)
     material_types = []
     try:
         material_types = [str(x).strip().lower() for x in (data.get('material_types') or []) if str(x).strip()]
     except Exception:
         material_types = []
-    # Optional year range
+    # Необязательный диапазон лет
     year_from = (data.get('year_from') or '').strip()
     year_to = (data.get('year_to') or '').strip()
-    # Optional tag filters: ["key=value", ...]
+    # Необязательные фильтры тегов: ["key=value", ...]
     tag_filters = []
     try:
         tag_filters = [str(x) for x in (data.get('tag_filters') or []) if '=' in str(x)]
     except Exception:
         tag_filters = []
 
-    # Expand and tokenize
+    # Расширяем и токенизируем
     keywords = _ai_expand_keywords(query)
     base_tokens = _tokenize_query(query)
     extra_tokens = []
     for w in keywords:
         extra_tokens.extend(_tokenize_query(w))
-    # unique terms (tokens) preserving order, prefer base_tokens first
+    # уникальные термины (токены) с сохранением порядка, отдаём приоритет base_tokens
     seen = set()
     terms: list[str] = []
     for w in base_tokens + extra_tokens:
@@ -5721,7 +5873,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
             seen.add(w)
             terms.append(w)
     if not terms and query:
-        # fallback: at least use the raw query as term
+        # запасной вариант: используем исходный запрос как термин
         terms = _tokenize_query(query) or [query.lower()]
     if terms:
         preview = ', '.join(terms[:6])
@@ -5731,10 +5883,10 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
     else:
         progress.add("Ключевые термины: не выделены")
 
-    # Precompute IDF per term
+    # Предварительно считаем IDF по каждому термину
     idf = _idf_for_terms(terms)
 
-    # Accumulate candidates with scores and hits
+    # Накапливаем кандидатов с оценками и попаданиями
     scores: dict[int, float] = {}
     hits: dict[int, list[dict]] = {}
 
@@ -5748,7 +5900,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
             if term:
                 s.add(term)
 
-    # Tag matches
+    # Совпадения по тегам
     if use_tags:
         for w in terms:
             like = f"%{w}%"
@@ -5776,7 +5928,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
     else:
         progress.add("Теги: пропущено (источник отключён)")
 
-    # File field matches
+    # Совпадения по полям файла
     if use_text:
         for w in terms:
             like = f"%{w}%"
@@ -5817,7 +5969,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
     else:
         progress.add("Метаданные: пропущено (источник отключён)")
 
-    # Compose results
+    # Формируем результаты
     file_ids = list(scores.keys())
     results = []
     if file_ids:
@@ -5832,7 +5984,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
             q_files = q_files.filter(File.year >= year_from)
         if year_to:
             q_files = q_files.filter(File.year <= year_to)
-        # Apply tag filters at the final stage
+        # Применяем фильтры тегов на финальном этапе
         for tf in tag_filters:
             try:
                 k, v = tf.split('=', 1)
@@ -5852,7 +6004,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
             f = id2file.get(fid)
             if not f:
                 continue
-            # phrase boost (raw query as a phrase)
+            # усиление за точную фразу (исходный запрос как фраза)
             phrase_boost = 0.0
             qraw = query.strip()
             if len(qraw) >= 3:
@@ -5864,10 +6016,10 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
                         phrase_boost += AI_BOOST_PHRASE * 0.6
                 except Exception:
                     pass
-            # distinct term coverage boost
+            # усиление за покрытие разных терминов
             n_terms = len(term_hits.get(fid, set()))
             coverage_boost = max(0, n_terms - 1) * AI_BOOST_MULTI
-            # snippets from cached excerpt / abstract
+            # сниппеты из кэшированного фрагмента/аннотации
             snips = []
             snippet_sources: list[str] = []
             try:
@@ -5889,7 +6041,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
                         snippet_sources.append('abstract')
                 except Exception:
                     pass
-            # proximity boost: multiple terms in same snippet
+            # усиление за близость: несколько терминов в одном сниппете
             prox_boost = 0.0
             if snips:
                 for s in snips:
@@ -5909,7 +6061,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
                 "snippets": snips,
                 "snippet_sources": snippet_sources,
             })
-        # sort by score desc, then recent mtime desc
+        # сортируем по убыванию балла, затем по дате изменения
         results.sort(key=lambda x: (x.get('score') or 0.0, id2file.get(x['file_id']).mtime or 0.0), reverse=True)
         progress.add(f"Ранжирование: {len(results)} кандидатов")
         for idx, res in enumerate(results, start=1):
@@ -5962,7 +6114,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
     else:
         progress.add("Совпадения не найдены")
 
-    # Optional short answer using snippets as context (search-oriented prompt)
+    # Необязательный короткий ответ, используя сниппеты как контекст (поисковый промпт)
     answer = ""
     if results:
         try:
@@ -5988,7 +6140,7 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
             answer = ""
             progress.add("LLM ответ: ошибка генерации")
 
-    # Optional: LLM-based shallow rerank of top 15 based on snippet context
+    # Необязательно: лёгкое реранжирование топ-15 через LLM с контекстом сниппетов
     if AI_RERANK_LLM and results:
         try:
             top = results[:15]
@@ -5996,26 +6148,46 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
             prompt = "\n".join(prompt_lines)
             sys = "Ты ранжируешь источники по релевантности к запросу. Верни JSON-массив id в порядке убывания релевантности."
             user = f"Запрос: {query}\nИсточники:\n{prompt}\nОтвети только JSON массивом id."
-            base_url, model_name, api_key = _select_llm_endpoint('rerank')
-            if not base_url:
-                raise RuntimeError('No LLM endpoint configured')
-            base = base_url.rstrip('/')
-            url = base + "/chat/completions" if not base.endswith("/chat/completions") else base
-            headers = {"Content-Type": "application/json"}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            payload = {"model": model_name, "messages": [{"role":"system","content":sys},{"role":"user","content":user}], "temperature": 0.0, "max_tokens": 200}
-            rr = requests.post(url, headers=headers, json=payload, timeout=60)
-            rr.raise_for_status()
-            dd = rr.json()
-            content = (dd.get("choices", [{}])[0].get("message", {}) or {}).get("content", "")
             order = None
-            try:
-                order = json.loads(content)
-            except Exception:
-                m = re.search(r"\[(?:\s*\d+\s*,?\s*)+\]", content)
-                if m:
-                    order = json.loads(m.group(0))
+            last_error: Exception | None = None
+            for choice in _llm_iter_choices('rerank'):
+                label = _llm_choice_label(choice)
+                url = _llm_choice_url(choice)
+                if not url:
+                    app.logger.warning(f"LLM rerank endpoint некорректен ({label}): пустой URL")
+                    continue
+                payload = {
+                    "model": choice.get('model') or LMSTUDIO_MODEL,
+                    "messages": [
+                        {"role": "system", "content": sys},
+                        {"role": "user", "content": user},
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": 200,
+                }
+                try:
+                    rr = requests.post(url, headers=_llm_choice_headers(choice), json=payload, timeout=60)
+                    if _llm_response_indicates_busy(rr):
+                        app.logger.info(f"LLM rerank endpoint занята ({label}), переключаемся")
+                        last_error = RuntimeError('busy')
+                        continue
+                    rr.raise_for_status()
+                    dd = rr.json()
+                    content = (dd.get("choices", [{}])[0].get("message", {}) or {}).get("content", "")
+                    try:
+                        order = json.loads(content)
+                    except Exception:
+                        m = re.search(r"\[(?:\s*\d+\s*,?\s*)+\]", content)
+                        if m:
+                            order = json.loads(m.group(0))
+                    if order is not None:
+                        break
+                except Exception as e:
+                    last_error = e
+                    app.logger.warning(f"LLM rerank failed ({label}): {e}")
+                    continue
+            if order is None and last_error and str(last_error) != 'busy':
+                app.logger.warning(f"LLM rerank failed: {last_error}")
             if isinstance(order, list) and all(isinstance(x, int) for x in order):
                 pos = {int(fid): i for i, fid in enumerate(order)}
                 results.sort(key=lambda x: (pos.get(int(x['file_id']), 10**6), -(x.get('score') or 0.0)))
@@ -6035,6 +6207,32 @@ def _ai_search_core(data: dict | None, progress_cb=None) -> dict:
 @app.route('/api/ai-search', methods=['POST'])
 def api_ai_search():
     data = request.get_json(silent=True) or {}
+    user = _load_current_user()
+    query_preview = str(data.get('query') or '').strip()[:200]
+    detail_obj = {
+        'query_preview': query_preview,
+        'top_k': data.get('top_k'),
+        'deep_search': data.get('deep_search'),
+        'sources': data.get('sources'),
+    }
+    try:
+        detail_payload = json.dumps(detail_obj, ensure_ascii=False)
+    except Exception:
+        detail_payload = str(detail_obj)
+    try:
+        _log_user_action(user, 'ai_search', 'search', None, detail=detail_payload[:2000])
+    except Exception:
+        pass
+    try:
+        app.logger.info(
+            "[user-action] user=%s action=ai_search query_preview=%s top_k=%s deep_search=%s",
+            getattr(user, 'username', None) or 'anonymous',
+            query_preview,
+            detail_obj.get('top_k'),
+            detail_obj.get('deep_search')
+        )
+    except Exception:
+        pass
     try:
         result = _ai_search_core(data)
     except ValueError as exc:
@@ -6048,6 +6246,33 @@ def api_ai_search():
 @app.route('/api/ai-search/stream', methods=['POST'])
 def api_ai_search_stream():
     data = request.get_json(silent=True) or {}
+    user = _load_current_user()
+    query_preview = str(data.get('query') or '').strip()[:200]
+    detail_obj = {
+        'query_preview': query_preview,
+        'top_k': data.get('top_k'),
+        'deep_search': data.get('deep_search'),
+        'sources': data.get('sources'),
+        'stream': True,
+    }
+    try:
+        detail_payload = json.dumps(detail_obj, ensure_ascii=False)
+    except Exception:
+        detail_payload = str(detail_obj)
+    try:
+        _log_user_action(user, 'ai_search_stream', 'search', None, detail=detail_payload[:2000])
+    except Exception:
+        pass
+    try:
+        app.logger.info(
+            "[user-action] user=%s action=ai_search_stream query_preview=%s top_k=%s deep_search=%s",
+            getattr(user, 'username', None) or 'anonymous',
+            query_preview,
+            detail_obj.get('top_k'),
+            detail_obj.get('deep_search')
+        )
+    except Exception:
+        pass
     queue: Queue = Queue()
 
     def emit(line: str) -> None:

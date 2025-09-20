@@ -22,6 +22,8 @@ export default function AdminLogsPage() {
   const [loading, setLoading] = useState(false)
   const [userFilter, setUserFilter] = useState('')
   const [actionFilter, setActionFilter] = useState('')
+  const [deleteBefore, setDeleteBefore] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     if (!isAdmin) return
@@ -44,6 +46,33 @@ export default function AdminLogsPage() {
     }
   }, [isAdmin, userFilter, actionFilter, toasts])
 
+  const handleDelete = useCallback(async () => {
+    if (!isAdmin || !deleteBefore.trim()) {
+      return
+    }
+    setDeleting(true)
+    try {
+      const body = { before: deleteBefore.trim() }
+      const r = await fetch('/api/admin/actions', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (r.ok && data?.ok) {
+        toasts.push(`Удалено записей: ${data.deleted ?? 0}`, 'success')
+        setDeleteBefore('')
+        await load()
+      } else {
+        toasts.push(data?.error || 'Не удалось удалить записи', 'error')
+      }
+    } catch {
+      toasts.push('Ошибка соединения при удалении', 'error')
+    } finally {
+      setDeleting(false)
+    }
+  }, [deleteBefore, isAdmin, load, toasts])
+
   useEffect(() => { load() }, [load])
 
   if (!isAdmin) return <div className="card p-3">Недостаточно прав.</div>
@@ -62,6 +91,24 @@ export default function AdminLogsPage() {
         <div className="d-flex align-items-end gap-2">
           <button className="btn btn-outline-secondary" onClick={load} disabled={loading}>{loading ? 'Загрузка…' : 'Обновить'}</button>
           <button className="btn btn-outline-secondary" onClick={()=>{ setUserFilter(''); setActionFilter(''); }} disabled={loading}>Сбросить</button>
+        </div>
+        <div className="d-flex align-items-end gap-2" style={{ maxWidth: 280 }}>
+          <div className="flex-grow-1">
+            <label className="form-label">Удалить записи до даты</label>
+            <input
+              type="date"
+              className="form-control form-control-sm"
+              value={deleteBefore}
+              onChange={e => setDeleteBefore(e.target.value)}
+            />
+          </div>
+          <button
+            className="btn btn-outline-danger"
+            onClick={handleDelete}
+            disabled={deleting || !deleteBefore.trim()}
+          >
+            {deleting ? 'Удаление…' : 'Удалить'}
+          </button>
         </div>
       </div>
       <div className="table-responsive">

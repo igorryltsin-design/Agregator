@@ -50,7 +50,7 @@ def main():
             frames = wf.getnframes()
             dur = frames / float(rate)
             print(f"wav params: channels={ch} width={sampwidth} rate={rate} frames={frames} duration={dur:.3f}s")
-            # read first 3 seconds and compute RMS
+            # читаем первые 3 секунды и считаем RMS
             n = min(int(3*rate), frames)
             raw = wf.readframes(n)
             import array
@@ -60,4 +60,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

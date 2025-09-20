@@ -72,7 +72,7 @@ def main():
         print(f'len={len(txt)}\n')
         return txt
 
-    # try requested settings
+    # пробуем запрошенные настройки
     text = run(vad=(not args.no_vad), lang=(args.lang or None))
     if not text and not args.no_vad:
         text = run(vad=False, lang=args.lang)
@@ -84,4 +84,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

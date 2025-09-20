@@ -17,7 +17,6 @@ import AdminLogsPage from './pages/AdminLogsPage'
 import AdminLlmPage from './pages/AdminLlmPage'
 import AdminCollectionsPage from './pages/AdminCollectionsPage'
 import ToastProvider from './ui/Toasts'
-import ActionLogProvider from './ui/ActionLog'
 import AuthProvider from './ui/Auth'
 
 const router = createBrowserRouter([
@@ -43,12 +42,10 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ActionLogProvider>
-      <ToastProvider>
-        <AuthProvider>
-          <RouterProvider router={router} />
-        </AuthProvider>
-      </ToastProvider>
-    </ActionLogProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </ToastProvider>
   </React.StrictMode>
 )

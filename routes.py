@@ -36,7 +36,7 @@ def _ru_tokens(text: str) -> list[str]:
     s = (text or '').lower()
     if _ru_tokenize:
         return [t.text for t in _ru_tokenize(s)]
-    # fallback: simple split
+    # резерв: простое разбиение
     return re.sub(r"[^\w\d]+", " ", s).strip().split()
 
 def _lemma(word: str) -> str:
@@ -222,7 +222,7 @@ def api_graph():
         q = q.filter(Collection.graphable == True)
     except Exception:
         pass
-    # year filters (string field kept compatible)
+    # фильтры по годам (строковое поле сохранено для совместимости)
     year_from = (request.args.get('year_from') or '').strip()
     year_to = (request.args.get('year_to') or '').strip()
     if year_from:
@@ -252,7 +252,7 @@ def api_graph():
                     nodes.append({"id": nid, "label": val, "type": f"tag:{key}"})
                     next_tag_id += 1
                 edges.append({"from": f"file-{fid}", "to": nid, "label": key})
-        # Fallback по полям File (например author)
+        # Резервный вариант по полям File (например author)
         if 'author' in tag_keys and (f.author or '').strip():
             val = f.author.strip()
             nid = tag_node_ids.get(('author', val))
@@ -262,7 +262,7 @@ def api_graph():
                 nodes.append({"id": nid, "label": val, "type": "tag:author"})
                 next_tag_id += 1
             edges.append({"from": f"file-{fid}", "to": nid, "label": 'author'})
-    # Optional server-side smart search with RU lemmas + synonyms
+    # Необязательный умный поиск на сервере с русскими леммами и синонимами
     q_str = (request.args.get('q') or '').strip()
     smart = str(request.args.get('smart', '')).lower() in ('1','true','yes','on')
     if q_str and smart:
@@ -274,7 +274,7 @@ def api_graph():
         for n in nodes:
             if match(n.get('label') or ''):
                 keep_ids.add(n['id'])
-        # Keep edges only if both ends are kept; extend keep set to include neighbors of kept to avoid isolating matches
+        # Оставляем рёбра только когда обе вершины сохранены; расширяем множество, чтобы включить соседей и не изолировать совпадения
         neigh_keep = set(keep_ids)
         for e in edges:
             if e['from'] in keep_ids or e['to'] in keep_ids:
@@ -294,12 +294,12 @@ def api_graph_build():
     files = File.query.all()
     created = 0
     for f in files:
-        # author
+        # автор
         if f.author:
             if not any(t.key == 'author' and t.value == f.author for t in f.tags):
                 upsert_tag(f, 'author', f.author)
                 created += 1
-        # advisor -> organization-like tag
+        # научный руководитель -> тег, похожий на организацию
         if f.advisor:
             if not any(t.key == 'advisor' and t.value == f.advisor for t in f.tags):
                 upsert_tag(f, 'advisor', f.advisor)
@@ -354,6 +354,7 @@ def api_file_update(file_id):
     _require_collection_write(f.collection_id)
     data = request.json or {}
     old_type = (f.material_type or '').strip().lower()
+    actor = _current_user()
     for field in ["title", "author", "year", "material_type", "filename", "keywords"]:
         if field in data:
             setattr(f, field, data[field])
@@ -378,16 +379,16 @@ def api_file_update(file_id):
             while p_new.exists() and p_new.resolve() != p_old.resolve():
                 p_new = target_dir / (f"{base}_{i}" + (ext or ''))
                 i += 1
-            # move
+            # переносим файл
             p_old.rename(p_new)
-            # cleanup old thumbnail for PDFs
+            # очищаем старую миниатюру для PDF
             try:
                 if (ext or '').lower() == '.pdf':
                     thumb = Path(current_app.static_folder) / 'thumbnails' / (p_old.stem + '.png')
                     if thumb.exists(): thumb.unlink()
             except Exception:
                 pass
-            # update DB fields
+            # обновляем поля в БД
             f.path = str(p_new)
             try:
                 f.rel_path = str(p_new.relative_to(base_dir))
@@ -405,6 +406,22 @@ def api_file_update(file_id):
     except Exception as e:
         current_app.logger.warning(f"Auto-move on type change failed: {e}")
     db.session.commit()
+    try:
+        tag_snapshot = []
+        for tag in data.get("tags", []):
+            k = (tag or {}).get('key')
+            v = (tag or {}).get('value')
+            if k and v:
+                tag_snapshot.append(f"{k}={v}")
+        current_app.logger.info(
+            "[tags] user=%s file=%s updated fields=%s tags=%s",
+            getattr(actor, 'username', None) or 'system',
+            f.id,
+            {k: data.get(k) for k in ("title", "author", "year", "material_type", "keywords") if k in data},
+            '; '.join(tag_snapshot)
+        )
+    except Exception:
+        pass
     _log_user_action('file_update', 'file', f.id, detail=str(data))
     return jsonify(file_to_dict(f))
 
@@ -437,7 +454,7 @@ def api_move_by_type():
             if not p_old.exists():
                 skipped += 1
                 continue
-            # skip if already in target
+            # пропускаем, если файл уже в целевой папке
             try:
                 if target_dir.resolve() == p_old.parent.resolve():
                     skipped += 1
@@ -453,14 +470,14 @@ def api_move_by_type():
                 p_new = target_dir / (f"{base}_{i}" + (ext or ''))
                 i += 1
             p_old.rename(p_new)
-            # cleanup old thumbnail for PDFs
+            # очищаем старую миниатюру для PDF
             try:
                 if (ext or '').lower() == '.pdf':
                     thumb = Path(current_app.static_folder) / 'thumbnails' / (p_old.stem + '.png')
                     if thumb.exists(): thumb.unlink()
             except Exception:
                 pass
-            # update DB
+            # обновляем запись в БД
             f.path = str(p_new)
             try:
                 f.rel_path = str(p_new.relative_to(base_dir))
@@ -606,8 +623,8 @@ def export_bibtex():
 
 @routes.route("/api/aiword/bibtex")
 def api_aiword_bibtex():
-    """Generate BibTeX derived from the catalogue DB for AiWord.
-    Attempts to map material_type and tags into standard BibTeX fields.
+    """Сгенерировать BibTeX на основе каталога для AiWord.
+    Пытаемся сопоставить material_type и теги стандартным полям BibTeX.
     """
     def tag_get(f: File, names: list[str]) -> str | None:
         want = {n.lower() for n in names}
@@ -619,7 +636,7 @@ def api_aiword_bibtex():
     def bib_for_file(f: File) -> str:
         mt = (f.material_type or '').strip().lower()
         key = f"f{f.id or 0}"
-        # choose entry type
+        # выбираем тип записи
         if mt == 'article':
             et = 'article'
         elif mt in ('textbook', 'monograph', 'book'):
@@ -627,7 +644,7 @@ def api_aiword_bibtex():
         elif mt in ('inproceedings', 'proceedings'):
             et = 'inproceedings'
         elif mt in ('dissertation', 'dissertation_abstract'):
-            # default to phdthesis
+            # по умолчанию используем phdthesis
             deg = tag_get(f, ['degree', 'степень']) or ''
             et = 'phdthesis' if 'доктор' in deg.lower() else 'mastersthesis'
         else:
@@ -636,14 +653,14 @@ def api_aiword_bibtex():
         title = (f.title or f.filename or '').strip() or 'Untitled'
         author = (f.author or '').strip()
         year = (f.year or '').strip()
-        # Common tags
+        # Распространённые теги
         doi = tag_get(f, ['doi'])
         pages = tag_get(f, ['pages', 'страницы'])
         journal = tag_get(f, ['journal', 'журнал'])
         vol_issue = tag_get(f, ['volume_issue'])
         publisher = tag_get(f, ['publisher', 'издательство'])
         school = tag_get(f, ['organization', 'организация'])
-        # Build fields
+        # Формируем поля
         fields: list[str] = [f"title={{ {title} }}"]
         if author:
             fields.append(f"author={{ {author} }}")
@@ -681,7 +698,7 @@ def api_aiword_bibtex():
                 fields.append(f"pages={{ {pages} }}")
         if doi:
             fields.append(f"doi={{ {doi} }}")
-        # Link to item page inside this app
+        # Ссылка на страницу элемента внутри приложения
         try:
             fields.append(f"url={{ /file/{f.id} }}")
         except Exception:
@@ -689,7 +706,7 @@ def api_aiword_bibtex():
 
         return f"@{et}{{{key},\n  " + ",\n  ".join(fields) + "\n}\n"
 
-    # Prefer only searchable collections, falling back to all
+    # Отдаём предпочтение только коллекциям с поиском; при ошибке берём все
     try:
         q = File.query.join(Collection, File.collection_id == Collection.id).filter(Collection.searchable == True)
         q = _apply_collection_filter(q, Collection)
@@ -708,7 +725,7 @@ def api_aiword_bibtex():
         try:
             out.write(bib_for_file(f))
         except Exception:
-            # fallback minimal misc entry
+            # резервный минимальный вариант записи misc
             out.write(f"@misc{{f{getattr(f,'id',0)}, title={{ {getattr(f,'title',None) or getattr(f,'filename','')} }} }}\n")
     return Response(out.getvalue(), mimetype="text/x-bibtex")
 

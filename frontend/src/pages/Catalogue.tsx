@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useActionLog } from '../ui/ActionLog'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 type Tag = { key: string; value: string }
@@ -100,8 +99,17 @@ export default function Catalogue() {
   const [localPage, setLocalPage] = useState(page)
   const [editItem, setEditItem] = useState<FileItem | null>(null)
   const [editForm, setEditForm] = useState<any>(null)
-  const actionLog = useActionLog()
   const [collections, setCollections] = useState<CollectionOption[]>([])
+  const logAction = useCallback((message: string, level: 'info'|'error'|'success' = 'info') => {
+    const prefixed = `[catalogue] ${message}`
+    if (level === 'error') {
+      console.error(prefixed)
+    } else if (level === 'success') {
+      console.info(prefixed)
+    } else {
+      console.debug(prefixed)
+    }
+  }, [])
 
   const openEdit = (f: FileItem) => {
     setEditItem(f)
@@ -706,10 +714,10 @@ export default function Catalogue() {
                 {f.rel_path && (
                   <div className="mt-2 d-flex gap-2 mt-auto">
                     <button className="btn btn-sm btn-outline-secondary" onClick={() => setPreviewRel(f.rel_path!)} title="Предпросмотр">👁️</button>
-                    <button className="btn btn-sm btn-outline-secondary" onClick={async(e)=>{ const el=e.currentTarget as HTMLButtonElement; el.disabled=true; const prev=el.textContent||''; el.textContent='…'; const url=`/api/files/${f.id}/refresh?use_llm=1&kws_audio=1&summarize=1`; actionLog.push(`REFRESH ${url}`); try{ const r=await fetch(url, { method:'POST' }); const text = await r.text(); if(r.ok){ let j: any = null; try{ j = JSON.parse(text) }catch{} if(j&&j.file){ setItems(list=>list.map(x=>x.id===j.file.id? j.file : x)) } if (j && Array.isArray(j.log)) { j.log.forEach((L:any)=> actionLog.push(L, 'info')) } toasts.push('Теги обновлены','success'); actionLog.push(`OK ${f.id} tags updated`, 'success') } else { toasts.push('Ошибка обновления тегов','error'); actionLog.push(`ERROR ${r.status} ${text.slice(0,500)}`,'error') } } catch(e:any){ toasts.push('Ошибка сети при обновлении','error'); actionLog.push(`NETWORK ${String(e)}`,'error') } finally{ el.disabled=false; el.textContent=prev } }} title="Обновить теги">⟳</button>
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async(e)=>{ const el=e.currentTarget as HTMLButtonElement; el.disabled=true; const prev=el.textContent||''; el.textContent='…'; const url=`/api/files/${f.id}/refresh?use_llm=1&kws_audio=1&summarize=1`; logAction(`REFRESH ${url}`); try{ const r=await fetch(url, { method:'POST' }); const text = await r.text(); if(r.ok){ let j: any = null; try{ j = JSON.parse(text) }catch{} if(j&&j.file){ setItems(list=>list.map(x=>x.id===j.file.id? j.file : x)) } if (j && Array.isArray(j.log)) { j.log.forEach((L:any)=> logAction(String(L), 'info')) } toasts.push('Теги обновлены','success'); logAction(`OK ${f.id} tags updated`, 'success') } else { toasts.push('Ошибка обновления тегов','error'); logAction(`ERROR ${r.status} ${text.slice(0,500)}`,'error') } } catch(e:any){ toasts.push('Ошибка сети при обновлении','error'); logAction(`NETWORK ${String(e)}`,'error') } finally{ el.disabled=false; el.textContent=prev } }} title="Обновить теги">⟳</button>
                     <button className="btn btn-sm btn-outline-secondary" onClick={()=>openEdit(f)} title="Редактировать">📝</button>
                     <button className="btn btn-sm btn-outline-secondary" onClick={async()=>{
-                      actionLog.push(`RENAME-SUGGEST /api/files/${f.id}/rename-suggest`)
+                      logAction(`RENAME-SUGGEST /api/files/${f.id}/rename-suggest`)
                       const s = await (await fetch(`/api/files/${f.id}/rename-suggest`)).json().catch(()=>null)
                       const new_name = s && (s.new_name || s.suggested || s.name)
                       if (!new_name) { alert('Не удалось получить предложение'); return }
@@ -717,7 +725,7 @@ export default function Catalogue() {
                       if (edited===null) return
                       const finalName = edited.trim()
                       if (!finalName) return
-                      actionLog.push(`RENAME /api/files/${f.id}/rename -> ${finalName}`)
+                      logAction(`RENAME /api/files/${f.id}/rename -> ${finalName}`)
                       try{
                         const r = await fetch(`/api/files/${f.id}/rename`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ base: finalName }) })
                         const text = await r.text()
@@ -732,11 +740,11 @@ export default function Catalogue() {
                             const fresh = await fetch(`/api/files/${f.id}`).then(r=>r.json()).catch(()=>null)
                             if (fresh){ setItems(list => list.map(x => x.id===fresh.id? fresh : x)); if (previewRel === f.rel_path && fresh.rel_path) setPreviewRel(fresh.rel_path) }
                           }
-                          toasts.push('Файл переименован','success'); actionLog.push('OK rename','success')
+                          toasts.push('Файл переименован','success'); logAction('OK rename','success')
                         } else {
-                          toasts.push('Ошибка переименования','error'); actionLog.push(`ERROR ${r.status} ${text.slice(0,500)}`,'error')
+                          toasts.push('Ошибка переименования','error'); logAction(`ERROR ${r.status} ${text.slice(0,500)}`,'error')
                         }
-                      }catch(e:any){ toasts.push('Сбой сети при переименовании','error'); actionLog.push(`NETWORK ${String(e)}`,'error') }
+                      }catch(e:any){ toasts.push('Сбой сети при переименовании','error'); logAction(`NETWORK ${String(e)}`,'error') }
                     }} title="Автопереименование">✎</button>
                     <a className="btn btn-sm btn-outline-secondary" href={`/download/${encodeURIComponent(f.rel_path)}`}>Скачать</a>
                     <button className="btn btn-sm btn-outline-danger ms-auto" onClick={async()=>{ if(!confirm('Удалить запись?')) return; const r=await fetch(`/api/files/${f.id}`, { method:'DELETE' }); if (r.status===204) location.reload() }} title="Удалить">✖</button>

@@ -1,0 +1,29 @@
+{
+  "SCAN_ROOT": "/Users/macbook/Documents/GitHub/Agregator/sample_library",
+  "EXTRACT_TEXT": true,
+  "LMSTUDIO_API_BASE": "http://localhost:1234/v1",
+  "LMSTUDIO_MODEL": "google/gemma-3n-e4b",
+  "LMSTUDIO_API_KEY": "",
+  "TRANSCRIBE_ENABLED": true,
+  "TRANSCRIBE_BACKEND": "faster-whisper",
+  "TRANSCRIBE_MODEL_PATH": "large-v3",
+  "TRANSCRIBE_LANGUAGE": "ru",
+  "SUMMARIZE_AUDIO": true,
+  "AUDIO_KEYWORDS_LLM": true,
+  "IMAGES_VISION_ENABLED": true,
+  "KEYWORDS_TO_TAGS_ENABLED": true,
+  "TYPE_DETECT_FLOW": "extension,filename,heuristics,llm",
+  "TYPE_LLM_OVERRIDE": true,
+  "IMPORT_SUBDIR": "import",
+  "MOVE_ON_RENAME": true,
+  "OCR_LANGS_CFG": "rus+eng",
+  "PDF_OCR_PAGES_CFG": 5,
+  "ALWAYS_OCR_FIRST_PAGE_DISSERTATION": true,
+  "PROMPTS": {
+    "metadata_system": "Ты помощник по каталогизации научных материалов. Твоя задача: определить тип материала из набора: dissertation, dissertation_abstract, article, textbook, monograph, report, patent, presentation, proceedings, standard, note, document. Если подходит несколько — выбери наиболее вероятный. Верни ТОЛЬКО валидный JSON без пояснений. Ключи: material_type, title, author, year, advisor, keywords (array), novelty (string), literature (array), organizations (array), classification (array). Если данных нет — пустые строки/массивы.",
+    "summarize_audio_system": "Ты помощник. Суммаризируй стенограмму аудио в 3–6 предложениях на русском, выделив тему, основные тезисы и вывод.",
+    "keywords_system": "Ты извлекаешь ключевые слова из стенограммы аудио. Верни только JSON-массив строк на русском: [\"ключ1\", \"ключ2\", ...]. Без пояснений, не более 12 слов/фраз.",
+    "vision_system": "Ты помощник по анализу изображений. Опиши изображение 2–4 предложениями на русском и верни 5–12 ключевых слов. Верни строго JSON: {\"description\":\"...\",\"keywords\":[\"...\"]}."
+  },
+  "AI_RERANK_LLM": true
+}

@@ -1,0 +1,15 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+.git
+.gitignore
+frontend/node_modules
+frontend/dist
+AiWord/node_modules
+AiWord/dist
+docs
+*.log
+.DS_Store

@@ -1,0 +1,308 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Темная тема */
+.dark {
+  color-scheme: dark;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 dark:bg-gray-700;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-500;
+}
+
+/* Animation for loading states */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Prose styling for markdown preview */
+.prose {
+  max-width: none;
+}
+
+.prose h1 {
+  @apply text-3xl font-bold text-gray-900 dark:text-white mb-6;
+}
+
+.prose h2 {
+  @apply text-2xl font-semibold text-gray-900 dark:text-white mb-4 mt-8;
+}
+
+.prose h3 {
+  @apply text-xl font-medium text-gray-900 dark:text-white mb-3 mt-6;
+}
+
+.prose p {
+  @apply text-gray-700 dark:text-gray-300 mb-4 leading-relaxed;
+}
+
+.prose ul, .prose ol {
+  @apply text-gray-700 dark:text-gray-300 mb-4;
+}
+
+.prose li {
+  @apply mb-2;
+}
+
+.prose blockquote {
+  @apply border-l-4 border-blue-500 pl-4 py-2 mb-4 bg-blue-50 dark:bg-blue-900/20;
+}
+
+.prose code {
+  @apply bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-sm font-mono;
+}
+
+.prose pre {
+  @apply bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4;
+}
+
+.prose table {
+  @apply w-full border-collapse border border-gray-300 dark:border-gray-600 mb-4;
+}
+
+.prose th,
+.prose td {
+  @apply border border-gray-300 dark:border-gray-600 px-4 py-2;
+}
+
+.prose th {
+  @apply bg-gray-50 dark:bg-gray-700 font-semibold;
+}
+
+/* Focus styles */
+input:focus,
+textarea:focus,
+select:focus,
+button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+/* Button hover animations */
+button {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+button:hover {
+  @apply transform scale-105;
+}
+
+button:active {
+  @apply transform scale-95;
+}
+
+/* Dark mode transitions */
+* {
+  @apply transition-colors duration-200;
+}
+
+/* Loading spinner */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Smooth appearance animations */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Status indicators */
+.status-working {
+  @apply animate-pulse;
+}
+
+/* Плавные переходы для темной темы */
+* {
+  @apply transition-colors duration-200;
+}
+
+/* Улучшенные стили для форм в темной теме */
+.dark input,
+.dark textarea,
+.dark select {
+  @apply bg-gray-700 border-gray-600 text-white;
+}
+
+.dark input:focus,
+.dark textarea:focus,
+.dark select:focus {
+  @apply border-blue-500 ring-blue-500;
+}
+
+/* Стили для кнопок в темной теме */
+.dark button:not(.bg-blue-600):not(.bg-green-600):not(.bg-yellow-600):not(.bg-purple-600):not(.bg-red-600):not(.bg-indigo-600):not(.bg-gray-600) {
+ /* ВАЖНО: без @apply, чтобы не было циклической зависимости Tailwind */
+ /* Эквивалентно: bg-gray-700 text-gray-200 border border-gray-600 */
+ background-color: theme('colors.gray.700');
+  color: theme('colors.gray.200');
+  border-width: 1px;
+ border-style: solid;
+  border-color: theme('colors.gray.600');
+}
+
+
+
+/* Стили для карточек в темной теме */
+.dark .bg-white {
+  @apply bg-gray-800;
+}
+
+/* Стили для границ в темной теме */
+.dark .border-gray-200 {
+  @apply border-gray-700;
+}
+
+.dark .border-gray-300 {
+  @apply border-gray-600;
+}
+
+/* Стили для текста в темной теме */
+.dark .text-gray-900 {
+  @apply text-white;
+}
+
+.dark .text-gray-700 {
+  @apply text-gray-300;
+}
+
+.dark .text-gray-600 {
+  @apply text-gray-400;
+}
+
+.dark .text-gray-500 {
+  @apply text-gray-400;
+}
+
+/* Стили для фона в темной теме */
+.dark .bg-gray-50 {
+  @apply bg-gray-700;
+}
+
+.dark .bg-gray-100 {
+  @apply bg-gray-700;
+}
+
+/* Анимации для переключения темы */
+@keyframes theme-transition {
+  0% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+.theme-transition {
+  animation: theme-transition 0.3s ease-in-out;
+}
+
+/* Стили для кеша индикаторов */
+.cache-indicator {
+  @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-medium;
+}
+
+.cache-indicator.cached {
+  @apply bg-green-100 text-green-800;
+}
+
+.dark .cache-indicator.cached {
+  @apply bg-green-900 text-green-200;
+}
+
+/* Стили для быстрого форматирования */
+.quick-format-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+  gap: 0.5rem;
+}
+
+.quick-format-button {
+  @apply flex items-center justify-center p-2 bg-white border border-gray-200 rounded hover:bg-gray-50 transition-colors;
+}
+
+.dark .quick-format-button {
+  @apply bg-gray-600 border-gray-500 hover:bg-gray-500;
+}
+
+/* Стили для профилей критериев */
+.criteria-profile {
+  @apply p-3 rounded-lg border cursor-pointer transition-all duration-200;
+}
+
+.criteria-profile:hover {
+  @apply shadow-md transform scale-105;
+}
+
+.criteria-profile.selected {
+  @apply border-blue-500 bg-blue-50 shadow-lg;
+}
+
+.dark .criteria-profile.selected {
+  @apply bg-blue-900/20;
+}
+
+/* Стили для статистики */
+.stats-card {
+  @apply bg-gradient-to-br from-blue-50 to-indigo-100 p-4 rounded-lg;
+}
+
+.dark .stats-card {
+  @apply from-blue-900/20 to-indigo-900/20;
+}
+
+/* Custom grid responsive */
+@media (max-width: 1024px) {
+  .grid.lg\\:grid-cols-4 {
+    @apply grid-cols-1;
+  }
+  
+  .quick-format-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .quick-format-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

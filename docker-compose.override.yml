@@ -1,0 +1,11 @@
+version: "3.8"
+services:
+  agregator:
+    environment:
+      # Раскомментируй и пропиши свои значения
+      # - LMSTUDIO_API_BASE=http://host.docker.internal:1234/v1
+      # - LMSTUDIO_MODEL=gpt-4o-mini
+      # - LMSTUDIO_API_KEY=sk-....
+    volumes:
+      # Пример: подключение персистентной базы
+      # - ./db/catalogue.db:/app/catalogue.db

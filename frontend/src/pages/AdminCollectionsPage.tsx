@@ -32,6 +32,7 @@ export default function AdminCollectionsPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(false)
+  const [rescanLoading, setRescanLoading] = useState(false)
   const [memberForm, setMemberForm] = useState({ user_id: '', role: 'viewer' })
 
   const loadCollections = async () => {
@@ -92,6 +93,36 @@ export default function AdminCollectionsPage() {
   }, [selectedId, toasts])
 
   const selectedCollection = useMemo(() => collections.find(c => c.id === selectedId) || null, [collections, selectedId])
+
+  const rescanCollection = async () => {
+    if (!selectedId) return
+    if (!confirm('Пересканировать выбранную коллекцию?')) return
+    setRescanLoading(true)
+    try {
+      const fd = new FormData()
+      fd.set('extract_text', 'on')
+      const r = await fetch(`/scan/collection/${selectedId}`, { method: 'POST', body: fd })
+      const data = await r.json().catch(() => ({}))
+      if (r.status === 409 || data?.status === 'busy') {
+        toasts.push('Сканирование уже запущено', 'error')
+      } else if (r.status === 404 || data?.status === 'not_found') {
+        toasts.push('Коллекция не найдена', 'error')
+      } else if (r.ok && data?.status === 'empty') {
+        const msg = data?.missing ? `В коллекции нет файлов для сканирования (отсутствует ${data.missing}).` : 'В коллекции нет файлов для сканирования.'
+        toasts.push(msg, 'info')
+      } else if (r.ok && data?.status === 'started') {
+        const msg = data?.missing ? `Сканирование запущено (${data.files} файлов, пропущено ${data.missing}).` : `Сканирование запущено (${data.files} файлов).`
+        toasts.push(msg, 'success')
+        try { window.dispatchEvent(new Event('scan-open')) } catch {}
+      } else {
+        toasts.push('Не удалось запустить сканирование коллекции', 'error')
+      }
+    } catch {
+      toasts.push('Ошибка при запуске сканирования коллекции', 'error')
+    } finally {
+      setRescanLoading(false)
+    }
+  }
 
   const addMember = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -206,6 +237,16 @@ export default function AdminCollectionsPage() {
                     {selectedCollection.owner_username ? `Владелец: ${selectedCollection.owner_username}` : 'Владелец не задан'} · {selectedCollection.is_private ? 'Приватная' : 'Общая'}
                   </div>
                 </div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={rescanCollection}
+                    disabled={rescanLoading}
+                  >
+                    {rescanLoading ? '...' : 'Пересканировать'}
+                  </button>
+                )}
               </div>
               <form className="row g-2 align-items-end mb-3" onSubmit={addMember}>
                 <div className="col-md-4">

@@ -1757,6 +1757,7 @@ def import_files():
     base_dir = SCAN_ROOT / IMPORT_SUBDIR if (IMPORT_SUBDIR or '').strip() else SCAN_ROOT
     saved = 0
     skipped = 0
+    duplicates_found = 0
     saved_rel_paths: list[str] = []
     base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1768,6 +1769,11 @@ def import_files():
             skipped += 1
             continue
         dest = base_dir / rel
+        if dest.exists():
+            skipped += 1
+            duplicates_found += 1
+            app.logger.info(f'Skip duplicate by path: {dest}')
+            continue
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             fs.save(dest)
@@ -1776,17 +1782,45 @@ def import_files():
             skipped += 1
             continue
 
-        saved += 1
         try:
-            try:
-                relp = str(dest.relative_to(SCAN_ROOT))
-            except Exception:
-                relp = dest.name
-            saved_rel_paths.append(relp)
             try:
                 sha1 = sha1_of_file(dest)
             except Exception:
                 sha1 = None
+
+            duplicate_rec = None
+            if sha1:
+                try:
+                    q = File.query.filter(File.sha1 == sha1)
+                    if col:
+                        q = q.filter(File.collection_id == col.id)
+                    else:
+                        q = q.filter(File.collection_id.is_(None))
+                    duplicate_rec = q.first()
+                except Exception:
+                    duplicate_rec = None
+            if duplicate_rec:
+                try:
+                    existing_path = Path(duplicate_rec.path) if duplicate_rec.path else None
+                except Exception:
+                    existing_path = None
+                try:
+                    if existing_path is None or existing_path.resolve() != dest.resolve():
+                        try:
+                            dest.unlink()
+                        except Exception:
+                            pass
+                        duplicates_found += 1
+                        skipped += 1
+                        app.logger.info(f'Skip duplicate by hash: {dest}')
+                        continue
+                except Exception:
+                    pass
+
+            try:
+                relp = str(dest.relative_to(SCAN_ROOT))
+            except Exception:
+                relp = dest.name
             fobj = File.query.filter_by(path=str(dest)).first()
             if not fobj:
                 fobj = File(
@@ -1804,10 +1838,17 @@ def import_files():
                 if col:
                     fobj.collection_id = col.id
             db.session.commit()
+            saved_rel_paths.append(relp)
+            saved += 1
         except Exception as e:
             db.session.rollback()
             app.logger.warning(f'Failed to register %s in DB: %s', rel, e)
             skipped += 1
+            try:
+                if dest.exists():
+                    dest.unlink()
+            except Exception:
+                pass
 
     start_scan = request.form.get('start_scan') == 'on'
     extract_text = request.form.get('extract_text', 'on') == 'on'
@@ -1831,13 +1872,20 @@ def import_files():
             scan_started = True
 
     try:
-        _log_user_action(_load_current_user(), 'import_batch', 'collection', col.id if col else None, detail=json.dumps({'saved': saved, 'skipped': skipped}))
+        _log_user_action(
+            _load_current_user(),
+            'import_batch',
+            'collection',
+            col.id if col else None,
+            detail=json.dumps({'saved': saved, 'skipped': skipped, 'duplicates': duplicates_found})
+        )
     except Exception:
         pass
     return jsonify({
         "status": "ok",
         "saved": saved,
         "skipped": skipped,
+        "duplicates": duplicates_found,
         "scan_started": scan_started,
         "imported": saved_rel_paths,
     })
@@ -4901,6 +4949,34 @@ def _iter_files_for_scan(root: Path):
             continue
         yield path
 
+def _purge_cached_artifacts(records: list[tuple[File, Path]]):
+    """Удаляет кэшированные превью и миниатюры для указанных файлов."""
+    if not records:
+        return
+    try:
+        static_dir = Path(app.static_folder or 'static').resolve()
+    except Exception:
+        return
+    txt_cache = static_dir / 'cache' / 'text_excerpts'
+    thumbs_dir = static_dir / 'thumbnails'
+    for file_obj, path in records:
+        try:
+            if txt_cache.exists():
+                key_base = file_obj.sha1 or (file_obj.rel_path or '').replace('/', '_')
+                if key_base:
+                    fp = txt_cache / f"{key_base}.txt"
+                    if fp.exists():
+                        fp.unlink()
+        except Exception:
+            pass
+        try:
+            if path.suffix.lower() == '.pdf' and thumbs_dir.exists():
+                thumb = thumbs_dir / f"{path.stem}.png"
+                if thumb.exists():
+                    thumb.unlink()
+        except Exception:
+            pass
+
 MAX_LOG_LINES = 200
 
 def _scan_log(msg: str, level: str = "info"):
@@ -5319,6 +5395,7 @@ def _run_scan_with_progress(extract_text: bool, use_llm: bool, prune: bool, skip
             SCAN_CANCEL = False
             SCAN_TASK_ID = None
             SCAN_PROGRESS["task_id"] = None
+            SCAN_PROGRESS["scope"] = None
 
 @app.route("/scan/start", methods=["POST"])
 @require_admin
@@ -5329,6 +5406,7 @@ def scan_start():
     extract_text = request.form.get("extract_text", "on") == "on"
     use_llm = request.form.get("use_llm") == "on" if "use_llm" in request.form else DEFAULT_USE_LLM
     prune = request.form.get("prune") == "on" if "prune" in request.form else DEFAULT_PRUNE
+    SCAN_PROGRESS["scope"] = {"type": "library", "label": "Вся библиотека"}
     SCAN_CANCEL = False
     skip = 0
     try:
@@ -5370,6 +5448,92 @@ def scan_start():
     t = threading.Thread(target=_run_scan_with_progress, args=(extract_text, use_llm, prune, skip), daemon=True)
     t.start()
     return jsonify({"status": "started"})
+
+
+@app.route("/scan/collection/<int:collection_id>", methods=["POST"])
+@require_admin
+def scan_collection(collection_id: int):
+    global SCAN_CANCEL, SCAN_TASK_ID
+    if SCAN_PROGRESS.get("running"):
+        return jsonify({"status": "busy"}), 409
+    collection = Collection.query.get(collection_id)
+    if not collection:
+        return jsonify({"status": "not_found", "error": "collection_not_found"}), 404
+    extract_text = request.form.get("extract_text", "on") == "on"
+    use_llm = request.form.get("use_llm") == "on" if "use_llm" in request.form else DEFAULT_USE_LLM
+    prune = request.form.get("prune") == "on" if "prune" in request.form else False
+    files = File.query.filter(File.collection_id == collection_id).all()
+    if not files:
+        return jsonify({"status": "empty", "collection_id": collection_id, "files": 0})
+
+    targets: list[str] = []
+    records: list[tuple[File, Path]] = []
+    missing = 0
+    for file_obj in files:
+        path_str = (file_obj.path or '').strip()
+        path = Path(path_str) if path_str else None
+        if not path or not path.exists():
+            fallback = None
+            if file_obj.rel_path:
+                try:
+                    fallback = (Path(SCAN_ROOT) / Path(file_obj.rel_path)).resolve()
+                except Exception:
+                    fallback = None
+            if fallback and fallback.exists():
+                path = fallback
+            else:
+                missing += 1
+                continue
+        if not path.is_file():
+            missing += 1
+            continue
+        ext = path.suffix.lower()
+        if ext not in ALLOWED_EXTS:
+            continue
+        resolved = path.resolve()
+        targets.append(str(resolved))
+        records.append((file_obj, resolved))
+
+    if not targets:
+        return jsonify({"status": "empty", "collection_id": collection_id, "files": 0, "missing": missing})
+
+    _purge_cached_artifacts(records)
+    SCAN_CANCEL = False
+    SCAN_PROGRESS["scope"] = {
+        "type": "collection",
+        "collection_id": collection.id,
+        "label": f"Коллекция «{collection.name}»",
+        "count": len(targets)
+    }
+
+    payload = {
+        "extract_text": extract_text,
+        "use_llm": use_llm,
+        "prune": prune,
+        "collection_id": collection.id,
+        "collection_name": collection.name,
+        "targets": len(targets),
+        "missing": missing,
+    }
+    try:
+        task = TaskRecord(name='scan', status='queued', payload=json.dumps(payload), progress=0.0)
+        db.session.add(task)
+        db.session.commit()
+        SCAN_TASK_ID = task.id
+        SCAN_PROGRESS["task_id"] = task.id
+    except Exception:
+        db.session.rollback()
+        SCAN_TASK_ID = None
+        SCAN_PROGRESS["task_id"] = None
+
+    try:
+        _log_user_action(_load_current_user(), 'scan_collection_start', 'collection', collection.id, detail=json.dumps(payload))
+    except Exception:
+        pass
+
+    t = threading.Thread(target=_run_scan_with_progress, args=(extract_text, use_llm, prune, 0, targets), daemon=True)
+    t.start()
+    return jsonify({"status": "started", "files": len(targets), "missing": missing})
 
 @app.route("/scan/status")
 def scan_status():

@@ -38,6 +38,7 @@ export default function AdminTasksPage() {
   const toasts = useToasts()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
+  const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null)
   const isAdmin = user?.role === 'admin'
 
   const load = useCallback(async () => {
@@ -47,7 +48,9 @@ export default function AdminTasksPage() {
       const r = await fetch('/api/admin/tasks')
       const data = await r.json().catch(() => ({}))
       if (r.ok && data?.ok) {
-        setTasks(Array.isArray(data.tasks) ? data.tasks : [])
+        const list: Task[] = Array.isArray(data.tasks) ? data.tasks : []
+        setTasks(list)
+        setExpandedTaskId(prev => (prev !== null && !list.some(t => t.id === prev) ? null : prev))
       } else {
         toasts.push(data?.error || 'Не удалось получить список задач', 'error')
       }
@@ -65,18 +68,50 @@ export default function AdminTasksPage() {
     return () => window.clearInterval(timer)
   }, [load])
 
-  const cancel = async (taskId: number) => {
+  const cancel = async (task: Task) => {
     try {
-      const r = await fetch(`/api/admin/tasks/${taskId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancel' }) })
-      const data = await r.json().catch(() => ({}))
-      if (r.ok && data?.ok) {
+      let ok = false
+      if (task.name === 'scan') {
+        const r = await fetch('/scan/cancel', { method: 'POST' })
+        ok = r.ok
+        if (!ok) {
+          const txt = await r.text().catch(() => '')
+          toasts.push(txt || 'Не удалось остановить сканирование', 'error')
+          return
+        }
+      } else {
+        const r = await fetch(`/api/admin/tasks/${task.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'cancel' })
+        })
+        const data = await r.json().catch(() => ({}))
+        ok = r.ok && data?.ok
+        if (!ok) {
+          toasts.push(data?.error || 'Не удалось остановить задачу', 'error')
+          return
+        }
+      }
+      if (ok) {
         toasts.push('Запрошена остановка задачи', 'success')
         load()
-      } else {
-        toasts.push(data?.error || 'Не удалось остановить задачу', 'error')
       }
     } catch {
       toasts.push('Ошибка соединения при остановке задачи', 'error')
+    }
+  }
+
+  const toggleDetails = (id: number) => {
+    setExpandedTaskId(prev => (prev === id ? null : id))
+  }
+
+  const formatPayload = (payload?: string | null) => {
+    if (!payload) return '—'
+    try {
+      const parsed = JSON.parse(payload)
+      return JSON.stringify(parsed, null, 2)
+    } catch {
+      return payload
     }
   }
 
@@ -108,38 +143,78 @@ export default function AdminTasksPage() {
               </tr>
             </thead>
             <tbody>
-              {tasks.map(task => (
-                <tr key={task.id}>
-                  <td>{task.id}</td>
-                  <td>{task.name}</td>
-                  <td>
-                    <span className={`badge ${statusBadge[task.status] || 'bg-secondary'}`}>{task.status}</span>
-                    {task.error && <div className="text-danger" style={{ fontSize: 12 }}>{task.error}</div>}
-                  </td>
-                  <td style={{ minWidth: 160 }}>
-                    {(() => {
-                      const pct = Number.isFinite(task.progress) ? Math.min(100, Math.max(0, Math.round(task.progress * 100))) : 0
-                      return (
-                        <>
-                          <div className="progress" style={{ height: 6 }}>
-                            <div className="progress-bar" role="progressbar" style={{ width: `${pct}%` }} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}></div>
+              {tasks.map(task => {
+                const expanded = expandedTaskId === task.id
+                const pct = Number.isFinite(task.progress) ? Math.min(100, Math.max(0, Math.round(task.progress * 100))) : 0
+                return (
+                  <React.Fragment key={task.id}>
+                    <tr>
+                      <td>{task.id}</td>
+                      <td>{task.name}</td>
+                      <td>
+                        <span className={`badge ${statusBadge[task.status] || 'bg-secondary'}`}>{task.status}</span>
+                        {task.error && <div className="text-danger" style={{ fontSize: 12 }}>{task.error}</div>}
+                      </td>
+                      <td style={{ minWidth: 160 }}>
+                        <div className="progress" style={{ height: 6 }}>
+                          <div className="progress-bar" role="progressbar" style={{ width: `${pct}%` }} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}></div>
+                        </div>
+                        <div className="text-muted" style={{ fontSize: 12 }}>{pct}%</div>
+                      </td>
+                      <td>{formatDate(task.created_at)}</td>
+                      <td>{formatDate(task.started_at)}</td>
+                      <td>{formatDate(task.finished_at)}</td>
+                      <td>
+                        <div className="btn-group btn-group-sm">
+                          <button className="btn btn-outline-secondary" onClick={() => toggleDetails(task.id)}>
+                            {expanded ? 'Скрыть' : 'Подробнее'}
+                          </button>
+                          <button
+                            className="btn btn-outline-danger"
+                            onClick={() => cancel(task)}
+                            disabled={task.status === 'completed' || task.status === 'error' || task.status === 'cancelled'}
+                          >
+                            Остановить
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr>
+                        <td colSpan={8}>
+                          <div className="p-3 bg-body-secondary rounded">
+                            <div className="fw-semibold mb-2">Подробности задачи</div>
+                            <div className="row g-3">
+                              <div className="col-md-4">
+                                <div className="text-muted" style={{ fontSize: 12 }}>Создана</div>
+                                <div>{formatDate(task.created_at)}</div>
+                              </div>
+                              <div className="col-md-4">
+                                <div className="text-muted" style={{ fontSize: 12 }}>Старт</div>
+                                <div>{formatDate(task.started_at)}</div>
+                              </div>
+                              <div className="col-md-4">
+                                <div className="text-muted" style={{ fontSize: 12 }}>Завершена</div>
+                                <div>{formatDate(task.finished_at)}</div>
+                              </div>
+                            </div>
+                            {task.error && (
+                              <div className="mt-3 text-danger">
+                                <div className="text-muted" style={{ fontSize: 12 }}>Ошибка</div>
+                                <div>{task.error}</div>
+                              </div>
+                            )}
+                            <div className="mt-3">
+                              <div className="text-muted" style={{ fontSize: 12 }}>Payload</div>
+                              <pre className="bg-dark-subtle p-2 rounded" style={{ maxHeight: 240, overflow: 'auto', fontSize: 12 }}>{formatPayload(task.payload)}</pre>
+                            </div>
                           </div>
-                          <div className="text-muted" style={{ fontSize: 12 }}>{pct}%</div>
-                        </>
-                      )
-                    })()}
-                  </td>
-                  <td>{formatDate(task.created_at)}</td>
-                  <td>{formatDate(task.started_at)}</td>
-                  <td>{formatDate(task.finished_at)}</td>
-                  <td>
-                    <div className="btn-group btn-group-sm">
-                      <button className="btn btn-outline-secondary" onClick={() => load()}>Обновить</button>
-                      <button className="btn btn-outline-danger" onClick={() => cancel(task.id)} disabled={task.status === 'completed' || task.status === 'error' || task.status === 'cancelled'}>Остановить</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                )
+              })}
               {tasks.length === 0 && (
                 <tr><td colSpan={8} className="text-center text-muted py-3">Задачи не найдены</td></tr>
               )}

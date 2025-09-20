@@ -221,6 +221,11 @@ export default function App() {
           <div className="d-flex align-items-center justify-content-between" style={{padding:'8px 12px', borderBottom:'1px solid var(--border)'}}>
             <div className="d-grid">
               <div>{scanRunning ? 'Сканирование…' : 'Сканер остановлен'}</div>
+              {scanStat?.scope?.label && (
+                <div className="muted" style={{fontSize:12}}>
+                  Область: {scanStat.scope.label}{typeof scanStat.scope.count === 'number' ? ` · файлов: ${scanStat.scope.count}` : ''}
+                </div>
+              )}
               {scanStat && (
                 <div className="muted" style={{fontSize:12}}>
                   {(() => {

@@ -75,6 +75,16 @@ export default function AdminLogsPage() {
 
   useEffect(() => { load() }, [load])
 
+  const formatDetail = useCallback((detail: string | null) => {
+    if (!detail) return '—'
+    try {
+      const parsed = JSON.parse(detail)
+      return JSON.stringify(parsed, null, 2)
+    } catch {
+      return detail
+    }
+  }, [])
+
   if (!isAdmin) return <div className="card p-3">Недостаточно прав.</div>
 
   return (
@@ -134,7 +144,9 @@ export default function AdminLogsPage() {
                 </td>
                 <td><span className="badge bg-secondary">{log.action}</span></td>
                 <td>{log.entity ? `${log.entity}${log.entity_id ? `#${log.entity_id}` : ''}` : '—'}</td>
-                <td><code style={{ fontSize: 12 }}>{log.detail || '—'}</code></td>
+                <td>
+                  <pre style={{ fontSize: 12, margin: 0, whiteSpace: 'pre-wrap' }}>{formatDetail(log.detail)}</pre>
+                </td>
                 <td>{log.created_at ? new Date(log.created_at).toLocaleString() : '—'}</td>
               </tr>
             ))}

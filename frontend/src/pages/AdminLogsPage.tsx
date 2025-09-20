@@ -75,15 +75,51 @@ export default function AdminLogsPage() {
 
   useEffect(() => { load() }, [load])
 
+  const flattenDetail = useCallback((value: any, prefix = '', acc: string[] = []) => {
+    if (value === null || value === undefined) {
+      acc.push(`${prefix}: null`)
+      return acc
+    }
+    if (typeof value === 'object') {
+      if (Array.isArray(value)) {
+        if (!value.length) {
+          const label = prefix || 'value'
+          acc.push(`${label}: []`)
+        } else {
+          value.forEach((item, idx) => {
+            const nextPrefix = prefix ? `${prefix}[${idx}]` : `[${idx}]`
+            flattenDetail(item, nextPrefix, acc)
+          })
+        }
+      } else {
+        const entries = Object.entries(value)
+        if (!entries.length) {
+          const label = prefix || 'value'
+          acc.push(`${label}: {}`)
+        } else {
+          entries.forEach(([k, v]) => {
+            const nextPrefix = prefix ? `${prefix}.${k}` : k
+            flattenDetail(v, nextPrefix, acc)
+          })
+        }
+      }
+      return acc
+    }
+    const label = prefix || 'value'
+    acc.push(`${label}: ${String(value)}`)
+    return acc
+  }, [])
+
   const formatDetail = useCallback((detail: string | null) => {
     if (!detail) return '—'
     try {
       const parsed = JSON.parse(detail)
-      return JSON.stringify(parsed, null, 2)
+      const lines = flattenDetail(parsed)
+      return lines.join('\n') || '—'
     } catch {
-      return detail
+      return detail.replace(/[{}]/g, '')
     }
-  }, [])
+  }, [flattenDetail])
 
   if (!isAdmin) return <div className="card p-3">Недостаточно прав.</div>
 

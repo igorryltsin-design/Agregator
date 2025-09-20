@@ -10,3 +10,9 @@
 /frontend/dist
 /frontend/node_modules
 logs/
+catalogue.db
+catalogue.db-journal
+catalogue.db
+catalogue.db-journal
+catalogue.db
+*.db

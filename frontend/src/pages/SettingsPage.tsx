@@ -3,7 +3,15 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../ui/Auth'
 import { useToasts } from '../ui/Toasts'
 
-type Collection = { id: number; name: string; searchable: boolean; graphable: boolean; count?: number }
+type Collection = {
+  id: number
+  name: string
+  slug?: string
+  searchable: boolean
+  graphable: boolean
+  is_private?: boolean
+  count?: number
+}
 type LlmEndpointInfo = {
   id: number
   name: string
@@ -34,6 +42,8 @@ type Settings = {
   type_llm_override: boolean
   import_subdir: string
   move_on_rename: boolean
+  collections_in_dirs?: boolean
+  collection_type_subdirs?: boolean
   ocr_langs: string
   pdf_ocr_pages: number
   ocr_first_page_dissertation?: boolean
@@ -43,6 +53,68 @@ type Settings = {
   llm_endpoints?: LlmEndpointInfo[]
   llm_purposes?: LlmPurposeOption[]
   aiword_users?: AiwordAccessUser[]
+  default_use_llm?: boolean
+  default_prune?: boolean
+  type_dirs?: Record<string, string>
+}
+
+const defaultPrompts: Record<string, string> = {
+  metadata_system: '',
+  summarize_audio_system: '',
+  keywords_system: '',
+  vision_system: '',
+}
+
+const boolVal = (value: any, fallback: boolean) => (value === undefined ? fallback : !!value)
+
+const normalizeSettings = (raw: any): Settings => {
+  const prompts = { ...defaultPrompts, ...(raw?.prompts || {}) }
+  const collectionsInDirs = boolVal(raw?.collections_in_dirs, false)
+  const collections = Array.isArray(raw?.collections)
+    ? raw.collections.map((col: any) => ({
+        id: Number(col?.id ?? 0),
+        name: String(col?.name ?? ''),
+        slug: col?.slug ? String(col.slug) : undefined,
+        searchable: boolVal(col?.searchable, true),
+        graphable: boolVal(col?.graphable, true),
+        is_private: boolVal(col?.is_private, false),
+        count: Number.isFinite(col?.count) ? Number(col.count) : 0,
+      }))
+    : []
+
+  return {
+    scan_root: String(raw?.scan_root || ''),
+    extract_text: boolVal(raw?.extract_text, true),
+    lm_base: String(raw?.lm_base || ''),
+    lm_model: String(raw?.lm_model || ''),
+    lm_key: String(raw?.lm_key || ''),
+    transcribe_enabled: boolVal(raw?.transcribe_enabled, true),
+    transcribe_backend: String(raw?.transcribe_backend || 'faster-whisper'),
+    transcribe_model: String(raw?.transcribe_model || ''),
+    transcribe_language: String(raw?.transcribe_language || 'ru'),
+    summarize_audio: boolVal(raw?.summarize_audio, true),
+    audio_keywords_llm: boolVal(raw?.audio_keywords_llm, true),
+    vision_images: boolVal(raw?.vision_images, false),
+    kw_to_tags: boolVal(raw?.kw_to_tags, true),
+    type_detect_flow: String(raw?.type_detect_flow || 'extension,filename,heuristics,llm'),
+    type_llm_override: boolVal(raw?.type_llm_override, true),
+    import_subdir: String(raw?.import_subdir || 'import'),
+    move_on_rename: boolVal(raw?.move_on_rename, true),
+    collections_in_dirs: collectionsInDirs,
+    collection_type_subdirs: collectionsInDirs ? boolVal(raw?.collection_type_subdirs, false) : false,
+    ocr_langs: String(raw?.ocr_langs || 'rus+eng'),
+    pdf_ocr_pages: Number.isFinite(raw?.pdf_ocr_pages) ? Number(raw.pdf_ocr_pages) : 5,
+    ocr_first_page_dissertation: boolVal(raw?.ocr_first_page_dissertation, true),
+    prompts,
+    ai_rerank_llm: boolVal(raw?.ai_rerank_llm, false),
+    collections,
+    llm_endpoints: Array.isArray(raw?.llm_endpoints) ? raw.llm_endpoints : [],
+    llm_purposes: Array.isArray(raw?.llm_purposes) ? raw.llm_purposes : [],
+    aiword_users: Array.isArray(raw?.aiword_users) ? raw.aiword_users : [],
+    default_use_llm: boolVal(raw?.default_use_llm, true),
+    default_prune: boolVal(raw?.default_prune, true),
+    type_dirs: raw?.type_dirs || {},
+  }
 }
 
 export default function SettingsPage() {
@@ -52,11 +124,13 @@ export default function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null)
   const [saving, setSaving] = useState(false)
   const [reindexUseLLM, setReindexUseLLM] = useState(true)
+  const [reindexPrune, setReindexPrune] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [aiwordQuery, setAiwordQuery] = useState('')
   const [aiwordOptions, setAiwordOptions] = useState<UserSuggestion[]>([])
   const [aiwordLoading, setAiwordLoading] = useState(false)
   const [llmWeights, setLlmWeights] = useState<Record<number, string>>({})
+  const [deleteCollectionId, setDeleteCollectionId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!isAdmin) return
@@ -72,7 +146,10 @@ export default function SettingsPage() {
           return
         }
         const data = await r.json().catch(() => ({}))
-        setS(data)
+        const normalized = normalizeSettings(data)
+        setS(normalized)
+        setReindexUseLLM(boolVal(normalized.default_use_llm, true))
+        setReindexPrune(boolVal(normalized.default_prune, true))
       } catch {
         if (!cancelled) {
           setError('Не удалось загрузить настройки')
@@ -255,6 +332,16 @@ export default function SettingsPage() {
     try {
       const { llm_endpoints, llm_purposes, aiword_users, ...rest } = s
       const payload: any = { ...rest, aiword_users: (aiword_users || []).map(u => u.user_id) }
+      payload.prompts = { ...defaultPrompts, ...(payload.prompts || {}) }
+      payload.collections_in_dirs = !!payload.collections_in_dirs
+      payload.collection_type_subdirs = !!payload.collection_type_subdirs
+      payload.default_use_llm = reindexUseLLM
+      payload.default_prune = reindexPrune
+      payload.collections = (payload.collections || []).map((col: Collection) => ({
+        id: col.id,
+        searchable: !!col.searchable,
+        graphable: !!col.graphable,
+      }))
       const r = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       if (r.ok) {
         toasts.push('Настройки сохранены', 'success')
@@ -273,11 +360,32 @@ export default function SettingsPage() {
       const fd = new FormData()
       if (s?.extract_text) fd.set('extract_text', 'on')
       fd.set('use_llm', reindexUseLLM ? 'on' : 'off')
-      fd.set('prune', 'on')
+      if (reindexPrune) fd.set('prune', 'on')
       await fetch('/scan/start', { method: 'POST', body: fd })
       try { window.dispatchEvent(new Event('scan-open')) } catch {}
     } catch {
       alert('Не удалось запустить сканирование')
+    }
+  }
+
+  const deleteCollection = async (collectionId: number) => {
+    const target = (s?.collections || []).find(c => c.id === collectionId)
+    if (!target) return
+    if (!confirm(`Удалить коллекцию «${target.name}» и все её файлы?`)) return
+    setDeleteCollectionId(collectionId)
+    try {
+      const r = await fetch(`/api/collections/${collectionId}`, { method: 'DELETE' })
+      const data = await r.json().catch(() => ({}))
+      if (r.ok && data?.ok) {
+        toasts.push('Коллекция удалена', 'success')
+        setS(prev => prev ? { ...prev, collections: (prev.collections || []).filter(c => c.id !== collectionId) } : prev)
+      } else {
+        toasts.push(data?.error || 'Не удалось удалить коллекцию', 'error')
+      }
+    } catch {
+      toasts.push('Ошибка при удалении коллекции', 'error')
+    } finally {
+      setDeleteCollectionId(null)
     }
   }
 
@@ -324,20 +432,44 @@ export default function SettingsPage() {
   const aiwordUsers = s.aiword_users || []
 
   return (
-    <div className="card p-3">
-      <div className="fw-semibold mb-3 d-flex flex-wrap justify-content-between gap-2 align-items-center">
-        <span>Настройки</span>
-        <div className="d-flex flex-wrap align-items-center gap-2">
-          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</button>
-          <div className="form-check form-switch m-0">
-            <input className="form-check-input" type="checkbox" id="reidx_llm" checked={reindexUseLLM} onChange={e => setReindexUseLLM(e.target.checked)} />
-            <label className="form-check-label" htmlFor="reidx_llm">LLM‑обработка при переиндексации</label>
+    <div className="d-grid gap-3">
+      <div className="card p-3">
+        <div className="fw-semibold mb-3 d-flex flex-wrap justify-content-between gap-2 align-items-center">
+          <span>Настройки</span>
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</button>
+            <div className="form-check form-switch m-0">
+              <input
+                className="form-check-input"
+                type="checkbox"
+                id="reidx_llm"
+                checked={reindexUseLLM}
+                onChange={e => {
+                  setReindexUseLLM(e.target.checked)
+                  setS(prev => prev ? { ...prev, default_use_llm: e.target.checked } : prev)
+                }}
+              />
+              <label className="form-check-label" htmlFor="reidx_llm">LLM при переиндексации</label>
+            </div>
+            <div className="form-check form-switch m-0">
+              <input
+                className="form-check-input"
+                type="checkbox"
+                id="reidx_prune"
+                checked={reindexPrune}
+                onChange={e => {
+                  setReindexPrune(e.target.checked)
+                  setS(prev => prev ? { ...prev, default_prune: e.target.checked } : prev)
+                }}
+              />
+              <label className="form-check-label" htmlFor="reidx_prune">Удалять отсутствующие файлы</label>
+            </div>
+            <button className="btn btn-outline-secondary" onClick={reindex}>Переиндексировать библиотеку</button>
           </div>
-          <button className="btn btn-outline-secondary" onClick={reindex}>Переиндексировать библиотеку</button>
         </div>
       </div>
 
-      <div className="card p-3 mb-3">
+      <div className="card p-3">
         <div className="fw-semibold mb-2">Индексатор и OCR</div>
         <div className="row g-3">
           <div className="col-md-8">
@@ -359,20 +491,43 @@ export default function SettingsPage() {
             <label className="form-label">PDF OCR: кол-во страниц</label>
             <input className="form-control" type="number" min={0} max={20} value={s.pdf_ocr_pages} onChange={e => setS({ ...s, pdf_ocr_pages: parseInt(e.target.value || '0', 10) })} />
           </div>
-          <div className="col-md-4 d-flex align-items-end gap-3">
-            <div className="form-check form-switch">
-              <input className="form-check-input" type="checkbox" id="ocr1st" checked={!!s.ocr_first_page_dissertation} onChange={e => setS({ ...s, ocr_first_page_dissertation: e.target.checked })} />
-              <label className="form-check-label" htmlFor="ocr1st">OCR 1‑й стр. для диссертаций</label>
-            </div>
-            <div className="form-check form-switch">
-              <input className="form-check-input" type="checkbox" id="move" checked={s.move_on_rename} onChange={e => setS({ ...s, move_on_rename: e.target.checked })} />
-              <label className="form-check-label" htmlFor="move">Перемещать при переименовании</label>
+          <div className="col-md-4">
+            <div className="d-flex flex-column gap-2">
+              <div className="form-check form-switch">
+                <input className="form-check-input" type="checkbox" id="ocr1st" checked={!!s.ocr_first_page_dissertation} onChange={e => setS({ ...s, ocr_first_page_dissertation: e.target.checked })} />
+                <label className="form-check-label" htmlFor="ocr1st">OCR 1‑й стр. для диссертаций</label>
+              </div>
+              <div className="form-check form-switch">
+                <input className="form-check-input" type="checkbox" id="move" checked={s.move_on_rename} onChange={e => setS({ ...s, move_on_rename: e.target.checked })} />
+                <label className="form-check-label" htmlFor="move">Перемещать при переименовании</label>
+              </div>
+              <div className="form-check form-switch">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  id="collectionsDirs"
+                  checked={!!s.collections_in_dirs}
+                  onChange={e => setS(prev => prev ? { ...prev, collections_in_dirs: e.target.checked, collection_type_subdirs: e.target.checked ? prev.collection_type_subdirs : false } : prev)}
+                />
+                <label className="form-check-label" htmlFor="collectionsDirs">Коллекции в отдельных папках</label>
+              </div>
+              <div className="form-check form-switch ms-3">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  id="collectionsType"
+                  checked={!!s.collection_type_subdirs}
+                  disabled={!s.collections_in_dirs}
+                  onChange={e => setS(prev => prev ? { ...prev, collection_type_subdirs: e.target.checked } : prev)}
+                />
+                <label className="form-check-label" htmlFor="collectionsType">Подпапки по типам внутри коллекций</label>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="card p-3 mb-3">
+      <div className="card p-3">
         <div className="fw-semibold mb-2">LLM и типизация</div>
         <div className="row g-3">
           <div className="col-md-5">
@@ -416,7 +571,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="card p-3 mb-3">
+      <div className="card p-3">
         <div className="fw-semibold mb-2">Транскрибация и аудио</div>
         <div className="row g-3">
           <div className="col-md-3 d-flex align-items-center">
@@ -482,7 +637,7 @@ export default function SettingsPage() {
         </datalist>
       </div>
 
-      <div className="card p-3 mb-3">
+      <div className="card p-3">
         <div className="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
           <div>
             <div className="fw-semibold">Назначение LLM эндпоинтов</div>
@@ -542,7 +697,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="card p-3 mb-3">
+      <div className="card p-3">
         <div className="fw-semibold mb-1">Доступ к AIWord</div>
         <div className="text-muted mb-3" style={{ fontSize: 13 }}>Администраторы всегда имеют доступ. Назначьте дополнительных пользователей, начав вводить их имя или логин.</div>
         <div className="d-flex flex-wrap align-items-start gap-2">
@@ -587,68 +742,114 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="card p-3 mb-3">
+      <div className="card p-3">
         <div className="fw-semibold mb-2">Коллекции</div>
         <div className="table-responsive">
           <table className="table table-sm align-middle">
-            <thead><tr><th>Название</th><th>Файлов</th><th>Поиск</th><th>Граф</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Название</th>
+                <th>Файлов</th>
+                <th>Поиск</th>
+                <th>Граф</th>
+                <th></th>
+              </tr>
+            </thead>
             <tbody>
               {(s.collections || []).map((c, idx) => (
                 <tr key={c.id}>
-                  <td>{c.name}</td>
+                  <td>
+                    <div className="fw-semibold">{c.name}</div>
+                    <div className="text-muted" style={{ fontSize: 12 }}>
+                      {c.slug ? `slug: ${c.slug}` : ''}
+                    </div>
+                  </td>
                   <td className="text-secondary">{c.count ?? 0}</td>
                   <td>
-                    <input className="form-check-input" type="checkbox" checked={c.searchable} onChange={e => {
-                      const next = [...(s.collections || [])]
-                      next[idx] = { ...c, searchable: e.target.checked }
-                      setS({ ...s, collections: next })
-                    }} />
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      checked={c.searchable}
+                      onChange={e => {
+                        const next = [...(s.collections || [])]
+                        next[idx] = { ...c, searchable: e.target.checked }
+                        setS({ ...s, collections: next })
+                      }}
+                    />
                   </td>
                   <td>
-                    <input className="form-check-input" type="checkbox" checked={c.graphable} onChange={e => {
-                      const next = [...(s.collections || [])]
-                      next[idx] = { ...c, graphable: e.target.checked }
-                      setS({ ...s, collections: next })
-                    }} />
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      checked={c.graphable}
+                      onChange={e => {
+                        const next = [...(s.collections || [])]
+                        next[idx] = { ...c, graphable: e.target.checked }
+                        setS({ ...s, collections: next })
+                      }}
+                    />
+                  </td>
+                  <td className="text-end">
+                    <button
+                      className="btn btn-sm btn-outline-danger"
+                      onClick={() => deleteCollection(c.id)}
+                      disabled={deleteCollectionId === c.id}
+                    >
+                      {deleteCollectionId === c.id ? '...' : 'Удалить'}
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <CollectionsEditor collections={s.collections || []} onSaved={async () => { const r = await fetch('/api/settings'); const j = await r.json(); setS(j) }} />
+        <CollectionsEditor
+          collections={s.collections || []}
+          onSaved={async () => {
+            const r = await fetch('/api/settings')
+            const j = await r.json()
+            const normalized = normalizeSettings(j)
+            setS(normalized)
+            setReindexUseLLM(boolVal(normalized.default_use_llm, true))
+            setReindexPrune(boolVal(normalized.default_prune, true))
+          }}
+        />
       </div>
 
-      <div className="fw-semibold mb-2">Управление базой данных</div>
-      <div className="d-flex flex-wrap gap-2 align-items-center">
-        <button className="btn btn-outline-primary" onClick={backupDb}>Резервная копия</button>
-        <form onSubmit={importDb} className="d-flex gap-2 align-items-center">
-          <input className="form-control" type="file" name="dbfile" accept=".db" required />
-          <button className="btn btn-outline-secondary" type="submit">Импорт .db</button>
-        </form>
-        <button className="btn btn-outline-danger" onClick={clearDb}>Очистить базу</button>
-      </div>
-
-      <div className="mt-4">
-        <div className="fw-semibold">Промпты LLM</div>
-        <div className="row g-2 mt-1">
-          <div className="col-md-6">
-            <label className="form-label">metadata_system</label>
-            <textarea className="form-control" rows={5} value={s.prompts?.metadata_system || ''} onChange={e => setS({ ...s, prompts: { ...s.prompts, metadata_system: e.target.value } })} />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label">summarize_audio_system</label>
-            <textarea className="form-control" rows={5} value={s.prompts?.summarize_audio_system || ''} onChange={e => setS({ ...s, prompts: { ...s.prompts, summarize_audio_system: e.target.value } })} />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label">keywords_system</label>
-            <textarea className="form-control" rows={5} value={s.prompts?.keywords_system || ''} onChange={e => setS({ ...s, prompts: { ...s.prompts, keywords_system: e.target.value } })} />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label">vision_system</label>
-            <textarea className="form-control" rows={5} value={s.prompts?.vision_system || ''} onChange={e => setS({ ...s, prompts: { ...s.prompts, vision_system: e.target.value } })} />
-          </div>
+      <div className="card p-3">
+        <div className="fw-semibold mb-2">Управление базой данных</div>
+        <div className="d-flex flex-wrap gap-2 align-items-center">
+          <button className="btn btn-outline-primary" onClick={backupDb}>Резервная копия</button>
+          <form onSubmit={importDb} className="d-flex gap-2 align-items-center">
+            <input className="form-control" type="file" name="dbfile" accept=".db" required />
+            <button className="btn btn-outline-secondary" type="submit">Импорт .db</button>
+          </form>
+          <button className="btn btn-outline-danger" onClick={clearDb}>Очистить базу</button>
         </div>
+      </div>
+
+      <div className="card p-3">
+        <details>
+          <summary className="fw-semibold">Промпты LLM</summary>
+          <div className="row g-2 mt-2">
+            <div className="col-md-6">
+              <label className="form-label">metadata_system</label>
+              <textarea className="form-control" rows={4} value={s.prompts?.metadata_system || ''} onChange={e => setS({ ...s, prompts: { ...s.prompts, metadata_system: e.target.value } })} />
+            </div>
+            <div className="col-md-6">
+              <label className="form-label">summarize_audio_system</label>
+              <textarea className="form-control" rows={4} value={s.prompts?.summarize_audio_system || ''} onChange={e => setS({ ...s, prompts: { ...s.prompts, summarize_audio_system: e.target.value } })} />
+            </div>
+            <div className="col-md-6">
+              <label className="form-label">keywords_system</label>
+              <textarea className="form-control" rows={4} value={s.prompts?.keywords_system || ''} onChange={e => setS({ ...s, prompts: { ...s.prompts, keywords_system: e.target.value } })} />
+            </div>
+            <div className="col-md-6">
+              <label className="form-label">vision_system</label>
+              <textarea className="form-control" rows={4} value={s.prompts?.vision_system || ''} onChange={e => setS({ ...s, prompts: { ...s.prompts, vision_system: e.target.value } })} />
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   )

@@ -217,6 +217,8 @@ PDF_OCR_PAGES_CFG = int(os.getenv("PDF_OCR_PAGES", "5"))
 ALWAYS_OCR_FIRST_PAGE_DISSERTATION = getenv_bool("OCR_DISS_FIRST_PAGE", True)
 DEFAULT_USE_LLM = getenv_bool("DEFAULT_USE_LLM", False)
 DEFAULT_PRUNE = getenv_bool("DEFAULT_PRUNE", True)
+COLLECTIONS_IN_SEPARATE_DIRS = getenv_bool("COLLECTIONS_IN_SEPARATE_DIRS", False)
+COLLECTION_TYPE_SUBDIRS = getenv_bool("COLLECTION_TYPE_SUBDIRS", False)
 
 LMSTUDIO_API_BASE = os.getenv("LMSTUDIO_API_BASE", "http://localhost:1234/v1")
 # Модель LLM по умолчанию
@@ -325,6 +327,11 @@ def _runtime_settings_snapshot() -> dict:
         'TYPE_LLM_OVERRIDE': bool(TYPE_LLM_OVERRIDE),
         'IMPORT_SUBDIR': IMPORT_SUBDIR,
         'MOVE_ON_RENAME': bool(MOVE_ON_RENAME),
+        'COLLECTIONS_IN_SEPARATE_DIRS': bool(COLLECTIONS_IN_SEPARATE_DIRS),
+        'COLLECTION_TYPE_SUBDIRS': bool(COLLECTION_TYPE_SUBDIRS),
+        'TYPE_DIRS': dict(TYPE_DIRS),
+        'DEFAULT_USE_LLM': bool(DEFAULT_USE_LLM),
+        'DEFAULT_PRUNE': bool(DEFAULT_PRUNE),
         'OCR_LANGS_CFG': OCR_LANGS_CFG,
         'PDF_OCR_PAGES_CFG': int(PDF_OCR_PAGES_CFG),
         'ALWAYS_OCR_FIRST_PAGE_DISSERTATION': bool(ALWAYS_OCR_FIRST_PAGE_DISSERTATION),
@@ -355,6 +362,8 @@ def _load_runtime_settings_from_disk() -> None:
     global TRANSCRIBE_ENABLED, TRANSCRIBE_BACKEND, TRANSCRIBE_MODEL_PATH, TRANSCRIBE_LANGUAGE
     global SUMMARIZE_AUDIO, AUDIO_KEYWORDS_LLM, IMAGES_VISION_ENABLED, KEYWORDS_TO_TAGS_ENABLED
     global TYPE_DETECT_FLOW, TYPE_LLM_OVERRIDE, IMPORT_SUBDIR, MOVE_ON_RENAME
+    global COLLECTIONS_IN_SEPARATE_DIRS, COLLECTION_TYPE_SUBDIRS, TYPE_DIRS
+    global DEFAULT_USE_LLM, DEFAULT_PRUNE
     global OCR_LANGS_CFG, PDF_OCR_PAGES_CFG, ALWAYS_OCR_FIRST_PAGE_DISSERTATION, PROMPTS, AI_RERANK_LLM
 
     if 'SCAN_ROOT' in data:
@@ -395,6 +404,34 @@ def _load_runtime_settings_from_disk() -> None:
         IMPORT_SUBDIR = str(data['IMPORT_SUBDIR'] or '').strip().strip('/\\')
     if 'MOVE_ON_RENAME' in data:
         MOVE_ON_RENAME = bool(data['MOVE_ON_RENAME'])
+    if 'COLLECTIONS_IN_SEPARATE_DIRS' in data:
+        COLLECTIONS_IN_SEPARATE_DIRS = bool(data['COLLECTIONS_IN_SEPARATE_DIRS'])
+    if 'COLLECTION_TYPE_SUBDIRS' in data:
+        COLLECTION_TYPE_SUBDIRS = bool(data['COLLECTION_TYPE_SUBDIRS'])
+    if 'TYPE_DIRS' in data and isinstance(data['TYPE_DIRS'], dict):
+        TYPE_DIRS = {str(k): str(v) for k, v in data['TYPE_DIRS'].items()}
+    if 'DEFAULT_USE_LLM' in data:
+        DEFAULT_USE_LLM = bool(data['DEFAULT_USE_LLM'])
+    if 'DEFAULT_PRUNE' in data:
+        DEFAULT_PRUNE = bool(data['DEFAULT_PRUNE'])
+    if not COLLECTIONS_IN_SEPARATE_DIRS:
+        COLLECTION_TYPE_SUBDIRS = False
+    if 'COLLECTIONS_IN_SEPARATE_DIRS' in data:
+        COLLECTIONS_IN_SEPARATE_DIRS = bool(data['COLLECTIONS_IN_SEPARATE_DIRS'])
+    if 'COLLECTION_TYPE_SUBDIRS' in data:
+        COLLECTION_TYPE_SUBDIRS = bool(data['COLLECTION_TYPE_SUBDIRS'])
+    if 'TYPE_DIRS' in data and isinstance(data['TYPE_DIRS'], dict):
+        TYPE_DIRS = {str(k): str(v) for k, v in data['TYPE_DIRS'].items()}
+    if 'DEFAULT_USE_LLM' in data:
+        DEFAULT_USE_LLM = bool(data['DEFAULT_USE_LLM'])
+    if 'DEFAULT_PRUNE' in data:
+        DEFAULT_PRUNE = bool(data['DEFAULT_PRUNE'])
+    if not COLLECTIONS_IN_SEPARATE_DIRS:
+        COLLECTION_TYPE_SUBDIRS = False
+    if 'COLLECTIONS_IN_SEPARATE_DIRS' in data:
+        COLLECTIONS_IN_SEPARATE_DIRS = bool(data['COLLECTIONS_IN_SEPARATE_DIRS'])
+    if 'COLLECTION_TYPE_SUBDIRS' in data:
+        COLLECTION_TYPE_SUBDIRS = bool(data['COLLECTION_TYPE_SUBDIRS'])
     if 'OCR_LANGS_CFG' in data:
         OCR_LANGS_CFG = str(data['OCR_LANGS_CFG'] or OCR_LANGS_CFG)
         os.environ['OCR_LANGS'] = OCR_LANGS_CFG
@@ -811,6 +848,8 @@ db.init_app(app)
 app.config.setdefault('UPLOAD_FOLDER', str(SCAN_ROOT))
 app.config.setdefault('IMPORT_SUBDIR', IMPORT_SUBDIR)
 app.config.setdefault('MOVE_ON_RENAME', MOVE_ON_RENAME)
+app.config.setdefault('COLLECTIONS_IN_SEPARATE_DIRS', COLLECTIONS_IN_SEPARATE_DIRS)
+app.config.setdefault('COLLECTION_TYPE_SUBDIRS', COLLECTION_TYPE_SUBDIRS)
 app.config.setdefault('TYPE_DIRS', TYPE_DIRS)
 
 # ------------------- Утилиты -------------------
@@ -826,6 +865,8 @@ app.config['UPLOAD_FOLDER'] = str(UPLOAD_FOLDER)
 _load_runtime_settings_from_disk()
 UPLOAD_FOLDER = SCAN_ROOT
 app.config['UPLOAD_FOLDER'] = str(SCAN_ROOT)
+app.config['COLLECTIONS_IN_SEPARATE_DIRS'] = COLLECTIONS_IN_SEPARATE_DIRS
+app.config['COLLECTION_TYPE_SUBDIRS'] = COLLECTION_TYPE_SUBDIRS
 
 # ------------------- Пользователи и доступ -------------------
 
@@ -1679,6 +1720,52 @@ def _sanitize_relpath(p: str) -> str:
     parts = [seg for seg in p.split('/') if seg not in ('', '.', '..')]
     return '/'.join(parts)
 
+
+def _get_collection_instance(collection_ref) -> Collection | None:
+    if isinstance(collection_ref, Collection):
+        return collection_ref
+    try:
+        cid = int(collection_ref)
+    except Exception:
+        cid = None
+    if cid:
+        try:
+            return Collection.query.get(cid)
+        except Exception:
+            return None
+    return None
+
+
+def _collection_dir_slug(col: Collection | None) -> str:
+    if not col:
+        return ''
+    slug = (col.slug or '').strip()
+    if slug:
+        return slug
+    name = (col.name or '').strip()
+    if name:
+        return _slugify(name)
+    return f"collection-{col.id or 'unknown'}"
+
+
+def _collection_root_dir(col: Collection | None, *, ensure: bool = True) -> Path:
+    root = Path(SCAN_ROOT)
+    if not COLLECTIONS_IN_SEPARATE_DIRS or col is None:
+        if ensure:
+            root.mkdir(parents=True, exist_ok=True)
+        return root
+    slug = _collection_dir_slug(col) or f"collection-{col.id or 'unknown'}"
+    target = Path(SCAN_ROOT) / 'collections' / slug
+    if ensure:
+        target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _import_base_dir_for_collection(col: Collection | None) -> Path:
+    base_root = _collection_root_dir(col)
+    sub = IMPORT_SUBDIR.strip()
+    return (base_root / sub) if sub else base_root
+
 @app.route('/import', methods=['GET', 'POST'])
 def import_files():
     """Импорт нескольких файлов и папок (через webkitdirectory) с возможным автосканом."""
@@ -1754,7 +1841,7 @@ def import_files():
         if not _has_collection_access(col.id, write=True):
             abort(403)
 
-    base_dir = SCAN_ROOT / IMPORT_SUBDIR if (IMPORT_SUBDIR or '').strip() else SCAN_ROOT
+    base_dir = _import_base_dir_for_collection(col)
     saved = 0
     skipped = 0
     duplicates_found = 0
@@ -3329,9 +3416,9 @@ def api_settings():
     global TRANSCRIBE_ENABLED, TRANSCRIBE_BACKEND, TRANSCRIBE_MODEL_PATH, TRANSCRIBE_LANGUAGE
     global SUMMARIZE_AUDIO, AUDIO_KEYWORDS_LLM, IMAGES_VISION_ENABLED
     global KEYWORDS_TO_TAGS_ENABLED, TYPE_DETECT_FLOW, TYPE_LLM_OVERRIDE
-    global IMPORT_SUBDIR, MOVE_ON_RENAME, TYPE_DIRS
+    global IMPORT_SUBDIR, MOVE_ON_RENAME, TYPE_DIRS, DEFAULT_USE_LLM, DEFAULT_PRUNE
     global OCR_LANGS_CFG, PDF_OCR_PAGES_CFG, ALWAYS_OCR_FIRST_PAGE_DISSERTATION
-    global PROMPTS, AI_RERANK_LLM
+    global PROMPTS, AI_RERANK_LLM, COLLECTIONS_IN_SEPARATE_DIRS, COLLECTION_TYPE_SUBDIRS
     if request.method == 'GET':
         # включаем коллекции для интерфейса React
         try:
@@ -3349,6 +3436,7 @@ def api_settings():
                 'slug': c.slug,
                 'searchable': bool(c.searchable),
                 'graphable': bool(c.graphable),
+                'is_private': bool(getattr(c, 'is_private', False)),
                 'count': int(counts.get(c.id, 0)),
             } for c in cols]
         except Exception:
@@ -3393,6 +3481,8 @@ def api_settings():
             'type_llm_override': bool(TYPE_LLM_OVERRIDE),
             'import_subdir': IMPORT_SUBDIR,
             'move_on_rename': bool(MOVE_ON_RENAME),
+            'collections_in_dirs': bool(COLLECTIONS_IN_SEPARATE_DIRS),
+            'collection_type_subdirs': bool(COLLECTION_TYPE_SUBDIRS),
             'type_dirs': TYPE_DIRS,
             'ocr_langs': OCR_LANGS_CFG,
             'pdf_ocr_pages': int(PDF_OCR_PAGES_CFG),
@@ -3403,6 +3493,8 @@ def api_settings():
             'llm_endpoints': llm_items,
             'llm_purposes': LLM_PURPOSES,
             'aiword_users': ai_users,
+            'default_use_llm': bool(DEFAULT_USE_LLM),
+            'default_prune': bool(DEFAULT_PRUNE),
         })
     data = request.json or {}
     SCAN_ROOT = Path(data.get('scan_root') or SCAN_ROOT)
@@ -3423,7 +3515,19 @@ def api_settings():
     TYPE_LLM_OVERRIDE = bool(data.get('type_llm_override', TYPE_LLM_OVERRIDE))
     IMPORT_SUBDIR = data.get('import_subdir') or IMPORT_SUBDIR
     MOVE_ON_RENAME = bool(data.get('move_on_rename', MOVE_ON_RENAME))
+    COLLECTIONS_IN_SEPARATE_DIRS = bool(data.get('collections_in_dirs', COLLECTIONS_IN_SEPARATE_DIRS))
+    COLLECTION_TYPE_SUBDIRS = bool(data.get('collection_type_subdirs', COLLECTION_TYPE_SUBDIRS))
     TYPE_DIRS = data.get('type_dirs') or TYPE_DIRS
+    if not COLLECTIONS_IN_SEPARATE_DIRS:
+        COLLECTION_TYPE_SUBDIRS = False
+    DEFAULT_USE_LLM = bool(data.get('default_use_llm', DEFAULT_USE_LLM))
+    DEFAULT_PRUNE = bool(data.get('default_prune', DEFAULT_PRUNE))
+    app.config['UPLOAD_FOLDER'] = str(SCAN_ROOT)
+    app.config['IMPORT_SUBDIR'] = IMPORT_SUBDIR
+    app.config['MOVE_ON_RENAME'] = MOVE_ON_RENAME
+    app.config['COLLECTIONS_IN_SEPARATE_DIRS'] = COLLECTIONS_IN_SEPARATE_DIRS
+    app.config['COLLECTION_TYPE_SUBDIRS'] = COLLECTION_TYPE_SUBDIRS
+    app.config['TYPE_DIRS'] = TYPE_DIRS
     # Настройки OCR (по возможности подменяем на лету)
     ocr_langs = data.get('ocr_langs')
     if ocr_langs is not None:
@@ -3440,6 +3544,25 @@ def api_settings():
         os.environ['OCR_DISS_FIRST_PAGE'] = '1' if ALWAYS_OCR_FIRST_PAGE_DISSERTATION else '0'
     except Exception:
         pass
+    collections_payload = data.get('collections')
+    if isinstance(collections_payload, list):
+        try:
+            for entry in collections_payload:
+                try:
+                    cid = int(entry.get('id'))
+                except Exception:
+                    continue
+                col = Collection.query.get(cid)
+                if not col:
+                    continue
+                if 'searchable' in entry:
+                    col.searchable = bool(entry['searchable'])
+                if 'graphable' in entry:
+                    col.graphable = bool(entry['graphable'])
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.warning('Не удалось обновить коллекции в настройках: %s', exc)
     # обновление промптов
     try:
         pr = data.get('prompts')
@@ -4856,6 +4979,65 @@ def _build_suggested_basename(file_obj: File) -> str:
     name = '.'.join(parts) if parts else _safe_filename_component(file_obj.filename)
     return name[:120]
 
+
+def _determine_target_dir_for_file(file_obj: File, current_path: Path, material_type: str) -> Path:
+    col = getattr(file_obj, 'collection', None)
+    if not isinstance(col, Collection):
+        col = _get_collection_instance(file_obj.collection_id)
+    material_type = (material_type or '').strip().lower()
+    fallback_sub = TYPE_DIRS.get(material_type) or TYPE_DIRS.get('other', 'other')
+    if COLLECTIONS_IN_SEPARATE_DIRS:
+        base_root = _collection_root_dir(col)
+        if col and COLLECTION_TYPE_SUBDIRS:
+            return base_root / fallback_sub
+        return base_root
+    if MOVE_ON_RENAME:
+        return Path(SCAN_ROOT) / fallback_sub
+    return current_path.parent
+
+
+def _rename_file_record(file_obj: File, base_name: str | None = None) -> Path:
+    p_old = Path(file_obj.path)
+    if not p_old.exists():
+        raise FileNotFoundError(f"Файл {file_obj.path} не найден")
+    base = (base_name or _build_suggested_basename(file_obj)) or file_obj.filename or p_old.stem
+    base = _safe_filename_component(base, max_len=120)
+    ext = file_obj.ext or p_old.suffix
+    mt = (file_obj.material_type or '').strip().lower()
+    target_dir = _determine_target_dir_for_file(file_obj, p_old, mt)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    p_new = target_dir / (base + (ext or ''))
+    i = 1
+    while p_new.exists() and p_new != p_old:
+        p_new = target_dir / (f"{base}_{i}" + (ext or ''))
+        i += 1
+    renamed = p_new != p_old
+    if renamed:
+        p_old.rename(p_new)
+        if (file_obj.ext or '').lower() == '.pdf':
+            try:
+                old_thumb = Path(app.static_folder) / 'thumbnails' / (p_old.stem + '.png')
+                if old_thumb.exists():
+                    old_thumb.unlink()
+            except Exception:
+                pass
+    file_obj.path = str(p_new)
+    try:
+        file_obj.rel_path = str(p_new.relative_to(Path(SCAN_ROOT)))
+    except Exception:
+        file_obj.rel_path = p_new.name
+    file_obj.filename = p_new.stem
+    try:
+        file_obj.mtime = p_new.stat().st_mtime
+    except Exception:
+        pass
+    if renamed:
+        try:
+            db.session.add(ChangeLog(file_id=file_obj.id, action='rename', field='filename', old_value=p_old.name, new_value=p_new.name))
+        except Exception:
+            pass
+    return p_new
+
 @app.route('/api/files/<int:file_id>/rename-suggest', methods=['GET'])
 def api_rename_suggest(file_id):
     f = File.query.get_or_404(file_id)
@@ -4873,49 +5055,87 @@ def api_rename_apply(file_id):
     if not base:
         base = _build_suggested_basename(f)
     base = _safe_filename_component(base, max_len=120)
-    ext = f.ext or Path(f.path).suffix
     try:
-        p_old = Path(f.path)
-        # целевая директория — по типу, если включено, иначе текущий родитель
-        mt = (f.material_type or '').lower().strip()
-        target_sub = TYPE_DIRS.get(mt) or TYPE_DIRS.get('other', 'other')
-        d = (SCAN_ROOT / target_sub) if MOVE_ON_RENAME else p_old.parent
-        d.mkdir(parents=True, exist_ok=True)
-        p_new = d / (base + (ext or ''))
-        # Разрулим коллизию
-        i = 1
-        while p_new.exists() and p_new != p_old:
-            p_new = d / (f"{base}_{i}" + (ext or ''))
-            i += 1
-        # Переименуем на диске
-        p_old.rename(p_new)
-        # Удалим старый thumbnail для PDF
-        try:
-            if (f.ext or '').lower() == '.pdf':
-                old_thumb = Path(app.static_folder) / 'thumbnails' / (p_old.stem + '.png')
-                if old_thumb.exists():
-                    old_thumb.unlink()
-        except Exception:
-            pass
-        # Обновим запись в БД
-        f.path = str(p_new)
-        # пересчитаем rel_path относительно SCAN_ROOT
-        try:
-            f.rel_path = str(p_new.relative_to(Path(SCAN_ROOT)))
-        except Exception:
-            f.rel_path = p_new.name
-        f.filename = p_new.stem
-        f.mtime = p_new.stat().st_mtime
-        # Лог изменения
-        try:
-            db.session.add(ChangeLog(file_id=f.id, action='rename', field='filename', old_value=p_old.name, new_value=p_new.name))
-        except Exception:
-            pass
+        p_new = _rename_file_record(f, base)
         db.session.commit()
-        return jsonify({"ok": True, "new_name": p_new.name, "rel_path": f.rel_path})
+        return jsonify({"ok": True, "new_name": Path(p_new).name, "rel_path": f.rel_path})
     except Exception as e:
         db.session.rollback()
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route('/api/collections/<int:collection_id>/rename-all', methods=['POST'])
+@require_admin
+def api_collection_rename_all(collection_id: int):
+    col = Collection.query.get_or_404(collection_id)
+    files = File.query.filter(File.collection_id == collection_id).all()
+    renamed = 0
+    errors: list[dict[str, str]] = []
+    for f in files:
+        try:
+            _rename_file_record(f)
+            db.session.commit()
+            renamed += 1
+        except Exception as exc:
+            db.session.rollback()
+            errors.append({'id': str(f.id), 'error': str(exc)})
+    try:
+        _log_user_action(_load_current_user(), 'collection_rename_all', 'collection', col.id, detail=json.dumps({'renamed': renamed, 'errors': len(errors)}))
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'renamed': renamed, 'errors': errors})
+
+
+def _delete_collection_files(col_id: int) -> tuple[int, list[str]]:
+    files = File.query.filter(File.collection_id == col_id).all()
+    removed = 0
+    errors: list[str] = []
+    for f in files:
+        path = Path(f.path) if f.path else None
+        if path and path.exists():
+            try:
+                path.unlink()
+                removed += 1
+            except Exception as exc:
+                errors.append(f"{path}: {exc}")
+        db.session.delete(f)
+    return removed, errors
+
+
+def _remove_collection_directory_path(path: Path | None) -> None:
+    if path is None:
+        return
+    try:
+        if path.exists():
+            shutil.rmtree(path)
+    except Exception:
+        pass
+
+
+@app.route('/api/collections/<int:collection_id>', methods=['DELETE'])
+@require_admin
+def api_delete_collection(collection_id: int):
+    col = Collection.query.get_or_404(collection_id)
+    collection_root: Path | None = None
+    if COLLECTIONS_IN_SEPARATE_DIRS:
+        try:
+            collection_root = _collection_root_dir(col, ensure=False)
+        except Exception:
+            collection_root = None
+    removed_files, errors = _delete_collection_files(collection_id)
+    try:
+        CollectionMember.query.filter_by(collection_id=collection_id).delete()
+        db.session.delete(col)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'ok': False, 'error': str(exc)}), 500
+    _remove_collection_directory_path(collection_root)
+    try:
+        _log_user_action(_load_current_user(), 'collection_delete', 'collection', collection_id, detail=json.dumps({'removed_files': removed_files, 'errors': len(errors)}))
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'removed_files': removed_files, 'errors': errors})
 
 # ------------------- Scan with Progress -------------------
 import threading, time
@@ -4948,6 +5168,15 @@ def _iter_files_for_scan(root: Path):
         if ext not in ALLOWED_EXTS:
             continue
         yield path
+
+
+def _bool_from_form(form, key: str, default: bool) -> bool:
+    if form is None:
+        return bool(default)
+    if key in form:
+        val = str(form.get(key) or '').strip().lower()
+        return val in ('1', 'true', 'yes', 'on')
+    return bool(default)
 
 def _purge_cached_artifacts(records: list[tuple[File, Path]]):
     """Удаляет кэшированные превью и миниатюры для указанных файлов."""
@@ -5403,10 +5632,16 @@ def scan_start():
     global SCAN_CANCEL, SCAN_TASK_ID
     if SCAN_PROGRESS.get("running"):
         return jsonify({"status": "busy"}), 409
-    extract_text = request.form.get("extract_text", "on") == "on"
-    use_llm = request.form.get("use_llm") == "on" if "use_llm" in request.form else DEFAULT_USE_LLM
-    prune = request.form.get("prune") == "on" if "prune" in request.form else DEFAULT_PRUNE
-    SCAN_PROGRESS["scope"] = {"type": "library", "label": "Вся библиотека"}
+    extract_text = _bool_from_form(request.form, "extract_text", EXTRACT_TEXT)
+    use_llm = _bool_from_form(request.form, "use_llm", DEFAULT_USE_LLM)
+    prune = _bool_from_form(request.form, "prune", DEFAULT_PRUNE)
+    SCAN_PROGRESS["scope"] = {
+        "type": "library",
+        "label": "Вся библиотека",
+        "extract_text": bool(extract_text),
+        "use_llm": bool(use_llm),
+        "prune": bool(prune),
+    }
     SCAN_CANCEL = False
     skip = 0
     try:
@@ -5459,9 +5694,9 @@ def scan_collection(collection_id: int):
     collection = Collection.query.get(collection_id)
     if not collection:
         return jsonify({"status": "not_found", "error": "collection_not_found"}), 404
-    extract_text = request.form.get("extract_text", "on") == "on"
-    use_llm = request.form.get("use_llm") == "on" if "use_llm" in request.form else DEFAULT_USE_LLM
-    prune = request.form.get("prune") == "on" if "prune" in request.form else False
+    extract_text = _bool_from_form(request.form, "extract_text", EXTRACT_TEXT)
+    use_llm = _bool_from_form(request.form, "use_llm", DEFAULT_USE_LLM)
+    prune = _bool_from_form(request.form, "prune", DEFAULT_PRUNE)
     files = File.query.filter(File.collection_id == collection_id).all()
     if not files:
         return jsonify({"status": "empty", "collection_id": collection_id, "files": 0})
@@ -5503,7 +5738,10 @@ def scan_collection(collection_id: int):
         "type": "collection",
         "collection_id": collection.id,
         "label": f"Коллекция «{collection.name}»",
-        "count": len(targets)
+        "count": len(targets),
+        "extract_text": bool(extract_text),
+        "use_llm": bool(use_llm),
+        "prune": bool(prune),
     }
 
     payload = {

@@ -33,6 +33,8 @@ export default function AdminCollectionsPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(false)
   const [rescanLoading, setRescanLoading] = useState(false)
+  const [renameLoading, setRenameLoading] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
   const [memberForm, setMemberForm] = useState({ user_id: '', role: 'viewer' })
 
   const loadCollections = async () => {
@@ -100,7 +102,6 @@ export default function AdminCollectionsPage() {
     setRescanLoading(true)
     try {
       const fd = new FormData()
-      fd.set('extract_text', 'on')
       const r = await fetch(`/scan/collection/${selectedId}`, { method: 'POST', body: fd })
       const data = await r.json().catch(() => ({}))
       if (r.status === 409 || data?.status === 'busy') {
@@ -121,6 +122,51 @@ export default function AdminCollectionsPage() {
       toasts.push('Ошибка при запуске сканирования коллекции', 'error')
     } finally {
       setRescanLoading(false)
+    }
+  }
+
+  const renameAll = async () => {
+    if (!selectedId) return
+    if (!confirm('Переименовать все файлы в выбранной коллекции?')) return
+    setRenameLoading(true)
+    try {
+      const r = await fetch(`/api/collections/${selectedId}/rename-all`, { method: 'POST' })
+      const data = await r.json().catch(() => ({}))
+      if (r.ok && data?.ok) {
+        const renamed = Number(data.renamed || 0)
+        const errors = Array.isArray(data.errors) ? data.errors.length : 0
+        toasts.push(`Переименовано файлов: ${renamed}${errors ? `, ошибок: ${errors}` : ''}`, 'success')
+        loadCollections()
+      } else {
+        toasts.push(data?.error || 'Не удалось переименовать файлы', 'error')
+      }
+    } catch {
+      toasts.push('Ошибка при переименовании файлов', 'error')
+    } finally {
+      setRenameLoading(false)
+    }
+  }
+
+  const deleteCollection = async () => {
+    if (!selectedId) return
+    if (!confirm('Удалить коллекцию и все её файлы? Действие необратимо.')) return
+    setDeleteLoading(true)
+    try {
+      const r = await fetch(`/api/collections/${selectedId}`, { method: 'DELETE' })
+      const data = await r.json().catch(() => ({}))
+      if (r.ok && data?.ok) {
+        toasts.push('Коллекция удалена', 'success')
+        setCollections(prev => prev.filter(c => c.id !== selectedId))
+        setSelectedId(null)
+        setMembers([])
+      } else {
+        toasts.push(data?.error || 'Не удалось удалить коллекцию', 'error')
+      }
+    } catch {
+      toasts.push('Ошибка при удалении коллекции', 'error')
+    } finally {
+      setDeleteLoading(false)
+      loadCollections()
     }
   }
 
@@ -230,7 +276,7 @@ export default function AdminCollectionsPage() {
           <div className="fw-semibold mb-2">Участники</div>
           {selectedCollection ? (
             <>
-              <div className="d-flex justify-content-between align-items-center mb-3">
+              <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                 <div>
                   <div className="fw-semibold">{selectedCollection.name}</div>
                   <div className="text-muted" style={{ fontSize: 12 }}>
@@ -238,14 +284,32 @@ export default function AdminCollectionsPage() {
                   </div>
                 </div>
                 {isAdmin && (
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary btn-sm"
-                    onClick={rescanCollection}
-                    disabled={rescanLoading}
-                  >
-                    {rescanLoading ? '...' : 'Пересканировать'}
-                  </button>
+                  <div className="btn-group btn-group-sm">
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={rescanCollection}
+                      disabled={rescanLoading}
+                    >
+                      {rescanLoading ? '...' : 'Пересканировать'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={renameAll}
+                      disabled={renameLoading}
+                    >
+                      {renameLoading ? '...' : 'Переименовать все'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline-danger"
+                      onClick={deleteCollection}
+                      disabled={deleteLoading}
+                    >
+                      {deleteLoading ? '...' : 'Удалить'}
+                    </button>
+                  </div>
                 )}
               </div>
               <form className="row g-2 align-items-end mb-3" onSubmit={addMember}>
